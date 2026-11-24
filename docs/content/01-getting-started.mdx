@@ -19,8 +19,28 @@ platform from the matching GitHub Release and verifies its SHA-256 hash. The
 package and the binary must have the same ABI version, which the package checks
 at load time.
 
-On Linux the prebuilt binaries need glibc 2.35 or newer (Ubuntu 22.04 or
-later, Debian 12 or later).
+## Platform requirements
+
+The prebuilt binaries target these minimum OS versions:
+
+| Platform | Minimum |
+| --- | --- |
+| iOS | 16.0 |
+| macOS | 13.0 |
+| Android | API 30 (Android 11) |
+| Linux | glibc 2.35 (Ubuntu 22.04, Debian 12) |
+
+A Flutter app has to raise its own minimums to match:
+
+- **iOS**: in `ios/Podfile` set `platform :ios, '16.0'`, and set the iOS
+  Deployment Target of the Runner target to 16.0 in Xcode.
+- **macOS**: in `macos/Podfile` set `platform :osx, '13.0'`, and set
+  `MACOSX_DEPLOYMENT_TARGET = 13.0` (Xcode: macOS Deployment Target).
+- **Android**: in `android/app/build.gradle(.kts)` set `minSdk = 30`
+  (`minSdkVersion 30` in older Groovy files).
+
+For other minimums, build from source (see
+[Formats and build](/formats-and-build)).
 
 ## Open a source
 

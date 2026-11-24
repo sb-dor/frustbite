@@ -19,6 +19,29 @@ The build hook downloads the prebuilt native library for your platform from the
 matching GitHub Release and verifies its SHA-256 hash. Supported platforms:
 Android, iOS, Linux (glibc 2.35 or newer), macOS, Windows and the web.
 
+## Platform requirements
+
+The prebuilt binaries target these minimum OS versions:
+
+| Platform | Minimum |
+| --- | --- |
+| iOS | 16.0 |
+| macOS | 13.0 |
+| Android | API 30 (Android 11) |
+| Linux | glibc 2.35 (Ubuntu 22.04, Debian 12) |
+
+A Flutter app has to raise its own minimums to match, or the build fails or the
+app does not load the library:
+
+- **iOS**: in `ios/Podfile` set `platform :ios, '16.0'`, and set the iOS
+  Deployment Target of the Runner target to 16.0 in Xcode.
+- **macOS**: in `macos/Podfile` set `platform :osx, '13.0'`, and set
+  `MACOSX_DEPLOYMENT_TARGET = 13.0` (Xcode: macOS Deployment Target).
+- **Android**: in `android/app/build.gradle(.kts)` set `minSdk = 30`
+  (`minSdkVersion 30` in older Groovy files).
+
+For other minimums, build from source (see [Build options](#build-options)).
+
 ## Quick start
 
 ```dart
@@ -74,7 +97,11 @@ Known limitations:
   is supported.
 - **WebM** gives no tags (the tag library has no Matroska support). Its
   duration may include up to one packet of tail padding.
-- **m4a**: `totalFrames` includes the 1024-frame AAC priming.
+- **m4a and ADTS**: `totalFrames` includes the 1024-frame AAC priming. It is
+  exact for wav, flac, mp3 with a LAME/Xing header, vorbis, ogg-opus and alac;
+  mp3 without that header is counted from the packets.
+- **ID3v1 text** is decoded as Latin-1, so non-Latin titles in ID3v1-only files
+  (for example CP1251 Cyrillic) show as mojibake. ID3v2 tags are unaffected.
 
 ## Async
 
@@ -135,7 +162,7 @@ pub.dev package.
 
 On an Apple M3 Pro, 180 s of 44.1 kHz stereo mp3 decodes in 95 ms. That is
 roughly on par with the native `audio_decode` (0.87x) and 83x faster than the
-pure-Dart `glint_audio_pure`. See [`packages/benchmark`](../benchmark/README.md)
+pure-Dart `glint_audio_pure`. See [`packages/benchmark`](https://github.com/sb-dor/frustbite/blob/main/packages/benchmark/README.md)
 for the full table, including the rows where Frustbite is slower.
 
 ## Roadmap
@@ -152,4 +179,12 @@ for the full table, including the rows where Frustbite is slower.
 
 ## License
 
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE). Third-party notices are in
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md); note that the bundled
+`symphonia` decoders are MPL-2.0, and that file says where to get their source.
+
+## Acknowledgements
+
+Repository structure, build hooks and release flow adapted from
+[hawkkiller/pixer](https://github.com/hawkkiller/pixer) (MIT, © 2026 Michael
+Lazebny).

@@ -16,4 +16,5 @@ Stage 1: reading.
 - Web: `frustbite.wasm` backend with `Frustbite.initialize`, for JavaScript and
   dart2wasm builds.
 - Known limitations: no HE-AAC (explicit SBR throws `UnsupportedFormatException`),
-  no Opus in MP4, no tags for WebM, m4a `totalFrames` includes AAC priming.
+  no Opus in MP4, no tags for WebM, m4a and ADTS `totalFrames` includes AAC priming, ID3v1 text is Latin-1.
+- Third-party license notices (including MPL-2.0 symphonia source availability) ship in `THIRD_PARTY_LICENSES.md`.

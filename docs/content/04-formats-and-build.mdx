@@ -27,8 +27,13 @@ Stage 1 only reads audio. All formats are decoded to `f32` PCM.
   Ogg and in WebM/Matroska is supported.
 - **WebM tags.** WebM gives no tags, because the tag library has no Matroska
   support. The reported duration may include up to one packet of tail padding.
-- **m4a frame count.** For m4a files, `totalFrames` includes the 1024-frame
-  AAC priming.
+- **m4a and ADTS frame count.** For m4a and ADTS files, `totalFrames` includes
+  the 1024-frame AAC priming. It is exact for wav, flac, mp3 with a LAME/Xing
+  header, vorbis, ogg-opus and alac; mp3 without that header is counted from
+  the packets.
+- **ID3v1 text.** ID3v1 is decoded as Latin-1, so non-Latin titles in
+  ID3v1-only files (for example CP1251 Cyrillic) show as mojibake. ID3v2 tags
+  are unaffected.
 - **The `format:` hint is advisory.** Content detection wins, and a wrong hint
   is not an error.
 - **Web.** See [WebAssembly](/webassembly): you supply `frustbite.wasm`,
