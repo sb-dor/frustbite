@@ -14,7 +14,8 @@ import 'package:frustbite/frustbite.dart';
 /// reset (and already includes `dart run` start-up), so each child instead
 /// samples `currentRss` during the run. The parent generates the mp3 once
 /// (with ffmpeg, in its own process) and then measures each mode in a fresh
-/// child process, re-invoking this script with `--mode=<name>`. Exits 1 if any mode exceeds the threshold.
+/// child process, re-invoking this script with `--mode=<name>`. Exits 1 if any mode exceeds the
+/// threshold or a child reports no result, 2 if ffmpeg is unavailable.
 const maxDeltaMb = 50.0;
 const _mb = 1024 * 1024;
 
@@ -33,36 +34,45 @@ Future<void> main(List<String> args) async {
   exit(await _runAll());
 }
 
+Future<ProcessResult> _ffmpeg(String path) => Process.run('ffmpeg', [
+  '-v',
+  'error',
+  '-y',
+  '-f',
+  'lavfi',
+  '-i',
+  'sine=frequency=440:sample_rate=44100:duration=3600',
+  '-f',
+  'lavfi',
+  '-i',
+  'anoisesrc=color=pink:amplitude=0.1:sample_rate=44100:duration=3600',
+  '-filter_complex',
+  '[0][1]amix=inputs=2:duration=first,aformat=channel_layouts=stereo',
+  '-ar',
+  '44100',
+  '-ac',
+  '2',
+  '-c:a',
+  'libmp3lame',
+  '-b:a',
+  '64k',
+  path,
+]);
+
 Future<int> _runAll() async {
   final dir = Directory.systemTemp.createTempSync('frustbite_mem_');
   try {
     final path = '${dir.path}/hour.mp3';
     stdout.writeln('Generating 1-hour 44.1 kHz stereo 64 kbps mp3 ...');
-    final gen = await Process.run('ffmpeg', [
-      '-v',
-      'error',
-      '-y',
-      '-f',
-      'lavfi',
-      '-i',
-      'sine=frequency=440:sample_rate=44100:duration=3600',
-      '-f',
-      'lavfi',
-      '-i',
-      'anoisesrc=color=pink:amplitude=0.1:'
-          'sample_rate=44100:duration=3600',
-      '-filter_complex',
-      '[0][1]amix=inputs=2:duration=first,aformat=channel_layouts=stereo',
-      '-ar',
-      '44100',
-      '-ac',
-      '2',
-      '-c:a',
-      'libmp3lame',
-      '-b:a',
-      '64k',
-      path,
-    ]);
+    final ProcessResult gen;
+    try {
+      gen = await _ffmpeg(path);
+    } on ProcessException {
+      stderr.writeln(
+        'ffmpeg not found on PATH; install it (e.g. brew install ffmpeg)',
+      );
+      return 2;
+    }
     if (gen.exitCode != 0) {
       stderr.writeln('ffmpeg failed: ${gen.stderr}');
       return 2;
@@ -77,7 +87,15 @@ Future<int> _runAll() async {
       ]);
       stdout.write(r.stdout);
       stderr.write(r.stderr);
-      if (r.exitCode != 0) failed = true;
+      // A child that exits 0 without reporting must not pass.
+      final reported = RegExp(
+        '^RESULT mode=$mode delta_mb=[0-9.]+\$',
+        multiLine: true,
+      ).hasMatch('${r.stdout}');
+      if (r.exitCode != 0 || !reported) {
+        if (!reported) stderr.writeln('[$mode] no RESULT line from child');
+        failed = true;
+      }
     }
     stdout.writeln(
       failed
@@ -127,6 +145,7 @@ Future<int> _measure(String name, String path) async {
       'delta ${delta.toStringAsFixed(1)} MB '
       '(limit ${maxDeltaMb.toStringAsFixed(0)} MB) ${ok ? 'OK' : 'FAIL'}',
     );
+    stdout.writeln('RESULT mode=$name delta_mb=${delta.toStringAsFixed(1)}');
     return ok ? 0 : 1;
   } finally {
     sampler.cancel();
