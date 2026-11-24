@@ -1,0 +1,71 @@
+name: Bug report
+description: Something decodes, reads or builds wrong
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please check the [documentation](https://sb-dor.github.io/frustbite/) first.
+        For security problems, do not open an issue; see the security policy.
+  - type: input
+    id: version
+    attributes:
+      label: frustbite version
+      placeholder: "0.0.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      multiple: true
+      options:
+        - Android
+        - iOS
+        - macOS
+        - Linux
+        - Windows
+        - Web dart2js
+        - Web dart2wasm
+    validations:
+      required: true
+  - type: input
+    id: sdk
+    attributes:
+      label: Dart / Flutter version
+      description: Output of `dart --version` or `flutter --version`.
+    validations:
+      required: true
+  - type: input
+    id: format
+    attributes:
+      label: Audio format and container
+      description: For example "MP3 with ID3v2", "AAC-LC in M4A", "Opus in WebM".
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A minimal snippet is best.
+      render: dart
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+      description: Include the full exception and stack trace if there is one.
+    validations:
+      required: true
+  - type: dropdown
+    id: attach
+    attributes:
+      label: Can you attach the audio file?
+      description: A failing file is the fastest way to a fix. Drag it into a comment after submitting, or zip it if it is large.
+      options:
+        - "Yes"
+        - "No, it is private or too large"
+        - "Not file related"
+    validations:
+      required: true
