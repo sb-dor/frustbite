@@ -1,2 +1,10 @@
 .superpowers/
 .DS_Store
+.dart_tool/
+.fvm/
+target/
+build/
+*.log
+.vscode/
+.idea/
+pubspec.lock

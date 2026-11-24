@@ -1,0 +1,29 @@
+[package]
+name = "frustbite"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[lib]
+name = "frustbite"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+
+# Keep in sync with `supportedFormats` in packages/frustbite/lib/src/hook/local_build.dart.
+[features]
+default = ["mp3", "aac", "alac", "flac", "vorbis", "opus", "wav"]
+mp3 = []
+aac = []
+alac = []
+flac = []
+vorbis = []
+opus = []
+wav = []
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

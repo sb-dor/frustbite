@@ -1,0 +1,13 @@
+name: frustbite_workspace
+description: A workspace for the frustbite package.
+
+environment:
+  sdk: ^3.10.0
+
+workspace:
+  - packages/frustbite
+
+hooks:
+  user_defines:
+    frustbite:
+      local_build: true

@@ -1,0 +1,12 @@
+language = "C"
+include_guard = "FRUSTBITE_H"
+style = "both"
+cpp_compat = true
+
+[export]
+exclude = ["frustbite_alloc", "frustbite_dealloc"]
+# Not reachable from any function signature, but needed by the Dart side.
+include = ["FrustbiteErrorCode"]
+
+[parse]
+parse_deps = false
