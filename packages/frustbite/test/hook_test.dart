@@ -383,6 +383,16 @@ void main() {
     });
   });
 
+  group('cargoConfigArgs', () {
+    test('passes the staged config of a published package only', () {
+      final crate = _tempDir('frustbite_cfg_');
+      expect(cargoConfigArgs(crate), isEmpty);
+      final config = File('${crate.path}/cargo-config.toml')
+        ..writeAsStringSync('');
+      expect(cargoConfigArgs(crate), ['--config', config.path]);
+    });
+  });
+
   group('hookDependencies', () {
     test(
       'lists crate sources and the prebuilt file, only those that exist',
