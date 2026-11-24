@@ -214,6 +214,7 @@ mod tests {
         assert!(values.iter().all(|v| (0.49..=0.51).contains(v)));
     }
 
+    #[cfg(feature = "flac")]
     #[test]
     fn waveform_silence_is_zero() {
         for mode in [Peak, Rms] {
@@ -236,6 +237,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "opus")]
     #[test]
     fn waveform_covers_file_without_duration() {
         let values = wave("tone.webm", 100, Peak, false);
@@ -280,12 +282,20 @@ mod tests {
         assert_eq!(audio.waveform(8, Rms, true).unwrap(), vec![0.0; 8]);
     }
 
+    #[cfg(feature = "mp3")]
     #[test]
     fn waveform_truncated_mp3_covers_what_decodes() {
         let values = wave("truncated.mp3", 20, Peak, false);
         assert!(values.iter().any(|&v| v > 0.0));
     }
 
+    #[cfg(all(
+        feature = "mp3",
+        feature = "aac",
+        feature = "vorbis",
+        feature = "opus",
+        feature = "flac"
+    ))]
     #[test]
     fn waveform_lossy_fixtures_stay_in_range() {
         for name in ["tone.mp3", "tone.m4a", "tone.ogg", "tone.opus", "tone.flac"] {

@@ -200,6 +200,10 @@ mod tests {
         FrustbiteAudio::open_file(format!("{FIXTURES}{name}"), None)?.decode()
     }
 
+    #[cfg(any(
+        all(feature = "mp3", feature = "aac", feature = "vorbis", feature = "opus"),
+        all(feature = "flac", feature = "alac")
+    ))]
     /// Squared magnitude of `signal` at `freq` (Goertzel).
     fn goertzel(signal: impl Iterator<Item = f32>, rate: f64, freq: f64) -> f64 {
         let coeff = 2.0 * (2.0 * std::f64::consts::PI * freq / rate).cos();
@@ -212,6 +216,10 @@ mod tests {
         s1 * s1 + s2 * s2 - coeff * s1 * s2
     }
 
+    #[cfg(any(
+        all(feature = "mp3", feature = "aac", feature = "vorbis", feature = "opus"),
+        all(feature = "flac", feature = "alac")
+    ))]
     fn channel(decoded: &Decoded, index: usize) -> impl Iterator<Item = f32> + '_ {
         decoded
             .samples
@@ -221,6 +229,10 @@ mod tests {
             .copied()
     }
 
+    #[cfg(any(
+        all(feature = "mp3", feature = "aac", feature = "vorbis", feature = "opus"),
+        all(feature = "flac", feature = "alac")
+    ))]
     fn assert_stereo_tone(name: &str, decoded: &Decoded) {
         assert_eq!(decoded.channels, 2, "{name}");
         let rate = f64::from(decoded.sample_rate);
@@ -244,6 +256,7 @@ mod tests {
         assert!(decoded.samples.iter().all(|s| s.abs() <= 1.0));
     }
 
+    #[cfg(all(feature = "mp3", feature = "aac", feature = "vorbis", feature = "opus"))]
     #[test]
     fn decode_lossy_fixtures_have_tone() {
         for name in ["tone.mp3", "tone.m4a", "tone.ogg", "tone.opus", "tone.webm"] {
@@ -252,6 +265,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(feature = "flac", feature = "alac"))]
     #[test]
     fn decode_lossless_fixtures_have_tone() {
         for name in ["tone.flac", "tone_alac.m4a"] {
@@ -259,6 +273,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "flac")]
     #[test]
     fn decode_flac_matches_wav() {
         let wav = decode("tone.wav").unwrap();
@@ -274,10 +289,27 @@ mod tests {
         assert!(worst <= 1.0 / 32_768.0, "{worst}");
     }
 
+    #[cfg(any(
+        all(
+            feature = "mp3",
+            feature = "flac",
+            feature = "alac",
+            feature = "vorbis",
+            feature = "opus"
+        ),
+        all(feature = "aac", feature = "opus")
+    ))]
     fn decoded_frames(decoded: &Decoded) -> u64 {
         (decoded.samples.len() / decoded.channels as usize) as u64
     }
 
+    #[cfg(all(
+        feature = "mp3",
+        feature = "flac",
+        feature = "alac",
+        feature = "vorbis",
+        feature = "opus"
+    ))]
     #[test]
     fn decode_frames_match_info() {
         for name in [
@@ -296,6 +328,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(feature = "aac", feature = "opus"))]
     #[test]
     fn decode_frames_differ_from_info_by_a_documented_tolerance() {
         // AAC in MP4: info uses the mdhd duration without the edit list, so it includes the
@@ -314,6 +347,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "opus")]
     #[test]
     fn decode_opus_drops_preskip() {
         for name in ["tone.opus", "tone.webm"] {
@@ -326,6 +360,7 @@ mod tests {
         assert_eq!(decode("tone.opus").unwrap().samples.len(), 144_000 * 2);
     }
 
+    #[cfg(feature = "mp3")]
     #[test]
     fn decode_truncated_mp3_returns_error_or_partial() {
         match decode("truncated.mp3") {
@@ -340,6 +375,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "flac")]
     #[test]
     fn decode_silence_is_zero() {
         let decoded = decode("silence.flac").unwrap();
@@ -347,6 +383,7 @@ mod tests {
         assert!(decoded.samples.iter().all(|&s| s == 0.0));
     }
 
+    #[cfg(feature = "mp3")]
     #[test]
     fn decode_memory_matches_file() {
         let bytes = std::fs::read(format!("{FIXTURES}tone.mp3")).unwrap();
