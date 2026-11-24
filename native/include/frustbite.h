@@ -261,6 +261,33 @@ FrustbiteErrorCode frustbite_get_info(const struct FrustbiteAudio *audio,
  */
 size_t frustbite_source_byte_length(const struct FrustbiteAudio *audio);
 
+/**
+ * Decodes the whole source to interleaved f32 at its native sample rate and channel count.
+ *
+ * On success `*out_samples` receives a buffer of `*out_len` samples (frames x channels) to
+ * release with `frustbite_free_f32` using the same length. A source without any audio frames
+ * yields a null `*out_samples` with `*out_len` 0. Decoding is heavy: call it off the UI
+ * thread.
+ *
+ * # Safety
+ * `audio` must be a live handle; every out-pointer must be valid for a write.
+ */
+FrustbiteErrorCode frustbite_decode(const struct FrustbiteAudio *audio,
+                                    float **out_samples,
+                                    size_t *out_len,
+                                    uint32_t *out_sample_rate,
+                                    uint32_t *out_channels);
+
+/**
+ * Releases a buffer from `frustbite_decode`. `len` must be the `*out_len` it returned.
+ * Passing null is a no-op.
+ *
+ * # Safety
+ * `ptr` must be null or a buffer returned by `frustbite_decode` with the same `len`, not yet
+ * freed.
+ */
+void frustbite_free_f32(float *ptr, size_t len);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

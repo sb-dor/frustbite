@@ -154,21 +154,24 @@ pub struct FrustbiteAudioInfo {
 }
 
 /// What `open` learns without reading the whole stream.
-struct Probed {
+pub(crate) struct Probed {
     container: FrustbiteContainer,
     codec: FrustbiteCodec,
-    sample_rate: u32,
-    channels: u32,
+    pub(crate) sample_rate: u32,
+    pub(crate) channels: u32,
     bits_per_sample: u32,
-    track_id: u32,
+    pub(crate) track_id: u32,
     /// Frames to drop from the start of decoded output (Opus pre-skip).
-    pre_skip: u64,
+    pub(crate) pre_skip: u64,
     /// Frame count from the container, if it states one.
-    known_frames: Option<u64>,
+    pub(crate) known_frames: Option<u64>,
+    /// MP3 only: the packet trims come from a LAME tag and can be trusted. Without one,
+    /// Symphonia derives them from a bitrate-based length estimate that is wrong for VBR.
+    pub(crate) mp3_trims_trusted: bool,
 }
 
-/// Consecutive undecodable packets after which the duration scan gives up.
-const MAX_CONSECUTIVE_SCAN_ERRORS: u32 = 64;
+/// Consecutive undecodable packets after which a duration scan or a decode gives up.
+pub(crate) const MAX_CONSECUTIVE_SCAN_ERRORS: u32 = 64;
 
 /// An opened audio source. Immutable, so it can be shared between threads.
 pub struct FrustbiteAudio {
@@ -217,6 +220,26 @@ impl FrustbiteAudio {
         self.source.resident_bytes()
     }
 
+    pub(crate) fn source(&self) -> &AudioSource {
+        &self.source
+    }
+
+    pub(crate) fn hint(&self) -> Option<FrustbiteContainer> {
+        self.hint
+    }
+
+    pub(crate) fn probed(&self) -> &Probed {
+        &self.probed
+    }
+
+    pub(crate) fn is_mp3(&self) -> bool {
+        self.probed.codec == FrustbiteCodec::Mp3
+    }
+
+    pub(crate) fn is_opus(&self) -> bool {
+        self.probed.codec == FrustbiteCodec::Opus
+    }
+
     /// The stream description; computed on the first successful call and cached.
     pub fn info(&self) -> Result<FrustbiteAudioInfo, Code> {
         if let Some(info) = self.info.get() {
@@ -230,7 +253,7 @@ impl FrustbiteAudio {
     }
 }
 
-fn map_error(error: &SymphoniaError) -> Code {
+pub(crate) fn map_error(error: &SymphoniaError) -> Code {
     match error {
         SymphoniaError::Unsupported(_) | SymphoniaError::LimitError(_) => Code::UnsupportedFormat,
         SymphoniaError::IoError(io) if io.kind() != std::io::ErrorKind::UnexpectedEof => {
@@ -240,7 +263,7 @@ fn map_error(error: &SymphoniaError) -> Code {
     }
 }
 
-fn open_reader(
+pub(crate) fn open_reader(
     source: &AudioSource,
     container: Option<FrustbiteContainer>,
 ) -> Result<Box<dyn FormatReader + 'static>, Code> {
@@ -348,6 +371,7 @@ fn probe(source: &AudioSource, hint: Option<FrustbiteContainer>) -> Result<Probe
         track_id: track.id,
         pre_skip,
         known_frames,
+        mp3_trims_trusted: codec == FrustbiteCodec::Mp3 && track.delay.is_some(),
     })
 }
 
@@ -431,7 +455,17 @@ fn scan_frames(
             Ok(Some(packet)) => {
                 consecutive_errors = 0;
                 if packet.track_id == probed.track_id {
-                    units += u128::from(packet.dur.get());
+                    let mut dur = u128::from(packet.dur.get());
+                    // Symphonia's MP3 demuxer reports the trims but leaves them inside `dur`
+                    // (Ogg subtracts them), so drop them here to count playable frames.
+                    if probed.mp3_trims_trusted {
+                        let trim = packet
+                            .trim_start
+                            .get()
+                            .saturating_add(packet.trim_end.get());
+                        dur = dur.saturating_sub(u128::from(trim));
+                    }
+                    units += dur;
                 }
             }
             Ok(None) => break,

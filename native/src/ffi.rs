@@ -146,6 +146,69 @@ pub unsafe extern "C" fn frustbite_source_byte_length(audio: *const FrustbiteAud
     catch_unwind(AssertUnwindSafe(|| unsafe { &*audio }.byte_length())).unwrap_or(0)
 }
 
+/// Decodes the whole source to interleaved f32 at its native sample rate and channel count.
+///
+/// On success `*out_samples` receives a buffer of `*out_len` samples (frames x channels) to
+/// release with `frustbite_free_f32` using the same length. A source without any audio frames
+/// yields a null `*out_samples` with `*out_len` 0. Decoding is heavy: call it off the UI
+/// thread.
+///
+/// # Safety
+/// `audio` must be a live handle; every out-pointer must be valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_decode(
+    audio: *const FrustbiteAudio,
+    out_samples: *mut *mut f32,
+    out_len: *mut usize,
+    out_sample_rate: *mut u32,
+    out_channels: *mut u32,
+) -> FrustbiteErrorCode {
+    guarded(|| {
+        if audio.is_null()
+            || out_samples.is_null()
+            || out_len.is_null()
+            || out_sample_rate.is_null()
+            || out_channels.is_null()
+        {
+            return FrustbiteErrorCode::InvalidPointer;
+        }
+        match unsafe { &*audio }.decode() {
+            Ok(decoded) => {
+                let len = decoded.samples.len();
+                let ptr = if len == 0 {
+                    std::ptr::null_mut()
+                } else {
+                    Box::into_raw(decoded.samples.into_boxed_slice()).cast::<f32>()
+                };
+                unsafe {
+                    out_samples.write(ptr);
+                    out_len.write(len);
+                    out_sample_rate.write(decoded.sample_rate);
+                    out_channels.write(decoded.channels);
+                }
+                FrustbiteErrorCode::Success
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// Releases a buffer from `frustbite_decode`. `len` must be the `*out_len` it returned.
+/// Passing null is a no-op.
+///
+/// # Safety
+/// `ptr` must be null or a buffer returned by `frustbite_decode` with the same `len`, not yet
+/// freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_free_f32(ptr: *mut f32, len: usize) {
+    if ptr.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) });
+    }));
+}
+
 #[cfg(test)]
 mod tests {
     use std::ffi::CString;
@@ -298,5 +361,121 @@ mod tests {
             frustbite_free(out);
         }
         assert_eq!(info.total_frames, 132_300);
+    }
+
+    /// A WAV with a valid header and no sample data.
+    fn empty_wav() -> Vec<u8> {
+        let mut wav = b"RIFF".to_vec();
+        wav.extend(36u32.to_le_bytes());
+        wav.extend(b"WAVEfmt ");
+        wav.extend(16u32.to_le_bytes());
+        for field in [1u16, 1] {
+            wav.extend(field.to_le_bytes());
+        }
+        wav.extend(44_100u32.to_le_bytes());
+        wav.extend(88_200u32.to_le_bytes());
+        for field in [2u16, 16] {
+            wav.extend(field.to_le_bytes());
+        }
+        wav.extend(b"data");
+        wav.extend(0u32.to_le_bytes());
+        wav
+    }
+
+    fn open_bytes(bytes: &[u8]) -> *mut FrustbiteAudio {
+        let mut out: *mut FrustbiteAudio = ptr::null_mut();
+        let code = unsafe {
+            frustbite_open_memory(
+                bytes.as_ptr(),
+                bytes.len(),
+                FRUSTBITE_FORMAT_DETECT,
+                &mut out,
+            )
+        };
+        assert_eq!(code, FrustbiteErrorCode::Success);
+        out
+    }
+
+    #[test]
+    fn decode_round_trip() {
+        let bytes = std::fs::read(format!("{FIXTURES}tone.wav")).unwrap();
+        let audio = open_bytes(&bytes);
+        let (mut samples, mut len, mut rate, mut channels) = (ptr::null_mut(), 0usize, 0u32, 0u32);
+        unsafe {
+            let code = frustbite_decode(audio, &mut samples, &mut len, &mut rate, &mut channels);
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            assert!(!samples.is_null());
+            assert_eq!((len, rate, channels), (132_300 * 2, 44_100, 2));
+            assert!(std::slice::from_raw_parts(samples, len)[200].abs() > 0.0);
+            frustbite_free_f32(samples, len);
+            frustbite_free(audio);
+        }
+    }
+
+    #[test]
+    fn decode_empty_source_returns_null_and_zero_len() {
+        let audio = open_bytes(&empty_wav());
+        let (mut samples, mut len, mut rate, mut channels) =
+            (ptr::dangling_mut::<f32>(), 99usize, 0u32, 0u32);
+        unsafe {
+            let code = frustbite_decode(audio, &mut samples, &mut len, &mut rate, &mut channels);
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            assert!(samples.is_null());
+            assert_eq!((len, rate, channels), (0, 44_100, 1));
+            frustbite_free_f32(samples, len);
+            frustbite_free(audio);
+        }
+    }
+
+    #[test]
+    fn decode_null_pointers_are_invalid_pointer() {
+        let bytes = std::fs::read(format!("{FIXTURES}click.wav")).unwrap();
+        let audio = open_bytes(&bytes);
+        let (mut samples, mut len, mut rate, mut channels) = (ptr::null_mut(), 0usize, 0u32, 0u32);
+        unsafe {
+            let invalid = FrustbiteErrorCode::InvalidPointer;
+            assert_eq!(
+                frustbite_decode(
+                    ptr::null(),
+                    &mut samples,
+                    &mut len,
+                    &mut rate,
+                    &mut channels
+                ),
+                invalid
+            );
+            assert_eq!(
+                frustbite_decode(audio, ptr::null_mut(), &mut len, &mut rate, &mut channels),
+                invalid
+            );
+            assert_eq!(
+                frustbite_decode(
+                    audio,
+                    &mut samples,
+                    ptr::null_mut(),
+                    &mut rate,
+                    &mut channels
+                ),
+                invalid
+            );
+            assert_eq!(
+                frustbite_decode(
+                    audio,
+                    &mut samples,
+                    &mut len,
+                    ptr::null_mut(),
+                    &mut channels
+                ),
+                invalid
+            );
+            assert_eq!(
+                frustbite_decode(audio, &mut samples, &mut len, &mut rate, ptr::null_mut()),
+                invalid
+            );
+            frustbite_free_f32(ptr::null_mut(), 0);
+            frustbite_free(audio);
+        }
+        assert!(samples.is_null());
+        assert_eq!((len, rate, channels), (0, 0, 0));
     }
 }

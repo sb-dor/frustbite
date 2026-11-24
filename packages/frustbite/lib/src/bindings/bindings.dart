@@ -15,12 +15,47 @@ import 'dart:ffi' as ffi;
 @ffi.Native<ffi.Uint32 Function()>(isLeaf: true)
 external int frustbite_abi_version();
 
+/// Decodes the whole source to interleaved f32 at its native sample rate and channel count.
+///
+/// On success `*out_samples` receives a buffer of `*out_len` samples (frames x channels) to
+/// release with `frustbite_free_f32` using the same length. A source without any audio frames
+/// yields a null `*out_samples` with `*out_len` 0. Decoding is heavy: call it off the UI
+/// thread.
+///
+/// # Safety
+/// `audio` must be a live handle; every out-pointer must be valid for a write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<FrustbiteAudio>,
+    ffi.Pointer<ffi.Pointer<ffi.Float>>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Uint32>,
+    ffi.Pointer<ffi.Uint32>,
+  )
+>()
+external int frustbite_decode(
+  ffi.Pointer<FrustbiteAudio> audio,
+  ffi.Pointer<ffi.Pointer<ffi.Float>> out_samples,
+  ffi.Pointer<ffi.Size> out_len,
+  ffi.Pointer<ffi.Uint32> out_sample_rate,
+  ffi.Pointer<ffi.Uint32> out_channels,
+);
+
 /// Releases a handle. Passing null is a no-op.
 ///
 /// # Safety
 /// `audio` must be null or a handle from `frustbite_open_*` that has not been freed yet.
 @ffi.Native<ffi.Void Function(ffi.Pointer<FrustbiteAudio>)>()
 external void frustbite_free(ffi.Pointer<FrustbiteAudio> audio);
+
+/// Releases a buffer from `frustbite_decode`. `len` must be the `*out_len` it returned.
+/// Passing null is a no-op.
+///
+/// # Safety
+/// `ptr` must be null or a buffer returned by `frustbite_decode` with the same `len`, not yet
+/// freed.
+@ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Float>, ffi.Size)>(isLeaf: true)
+external void frustbite_free_f32(ffi.Pointer<ffi.Float> ptr, int len);
 
 /// Describes the audio. The result is cached after the first call.
 ///

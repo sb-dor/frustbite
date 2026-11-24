@@ -10,8 +10,13 @@ const _sharedEnums = {
   'FrustbiteCodec',
 };
 
-/// Functions that never call back into Dart and can run as leaf calls.
-const _leafSymbols = {'frustbite_abi_version', 'frustbite_source_byte_length'};
+/// Functions that never call back into Dart and can run as leaf calls. Cheap calls only: no
+/// I/O, no decoding.
+const _leafSymbols = {
+  'frustbite_abi_version',
+  'frustbite_source_byte_length',
+  'frustbite_free_f32',
+};
 
 Future<void> main() async {
   final packageDir = File.fromUri(Platform.script).absolute.parent.parent.uri;

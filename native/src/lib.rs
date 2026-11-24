@@ -1,6 +1,7 @@
 //! Frustbite native audio engine: C ABI consumed by the Dart package.
 
 mod codecs;
+pub mod decode;
 pub mod error;
 pub mod ffi;
 #[cfg(feature = "opus")]
