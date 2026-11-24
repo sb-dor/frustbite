@@ -19,7 +19,13 @@ dart pub get   # from the repo root; a pub workspace
 ```
 
 The workspace sets `local_build: true`, so the build hook compiles the crate
-from source instead of downloading a release.
+from source (`native/`) instead of looking for a bundled `prebuilt/` library,
+which only the published package has.
+
+[mise](https://mise.jdx.dev) is optional: `mise.toml` wraps the commands below
+as tasks (`mise run fmt`, `fmt:check`, `analyze`, `test`, `check`,
+`build:native`, `verify:native`, `stage`, `publish:check`). Plain shell works
+the same.
 
 ## Checks
 
@@ -40,6 +46,9 @@ dart test
 dart tool/build_wasm.dart test/frustbite.wasm
 dart test -p chrome test/frustbite_wasm_test.dart
 dart test -p chrome --compiler dart2wasm test/frustbite_wasm_test.dart
+
+# a built native library, from the repo root (CI does this for every target)
+tool/verify_native.sh <file> <target>   # e.g. build/native/macos_arm64/libfrustbite.dylib macos_arm64
 
 # docs, from docs/
 npm ci && npm run docs:build && npm run docs:check
@@ -73,9 +82,15 @@ builds and verifies the 12 native libraries and `frustbite.wasm`, stages the
 package (`packages/frustbite/tool/stage_package.dart`) and runs
 `dart pub publish --dry-run` on it, then creates the GitHub Release with the
 libraries, `frustbite.wasm`, `THIRD_PARTY_LICENSES.md` and `checksums.json`.
-Publishing to pub.dev stays manual, from the released assets:
+Publishing to pub.dev stays manual, by the author. Check out the tag first:
+`stage_package.dart --from-release` refuses unless the tag exists, `HEAD` is
+the tag's commit, `packages/frustbite` and `native` are clean, and the tag
+matches the `pubspec.yaml` version. It downloads the 12 libraries with `gh`
+(they must match the release's `checksums.json`) and stages the package
+outside the repository:
 
 ```sh
+git fetch --tags && git checkout frustbite-vX.Y.Z
 cd packages/frustbite
 dart tool/stage_package.dart --from-release frustbite-vX.Y.Z --out ../../../frustbite-stage
 dart tool/check_pubignore.dart ../../../frustbite-stage
@@ -83,4 +98,10 @@ cd ../../../frustbite-stage && dart pub publish
 ```
 
 The same staging and dry run run on every pull request and manual run of the
-workflow, from that run's own build artifacts.
+workflow, from that run's own build artifacts. The published package bundles
+the libraries under `prebuilt/` (verified by the hook against
+`prebuilt/checksums.json`) and the crate under `rust/`; nothing is downloaded
+at build time.
+
+Design decisions and their status are in [docs/DECISIONS.md](docs/DECISIONS.md),
+planned work in [docs/ROADMAP.md](docs/ROADMAP.md).

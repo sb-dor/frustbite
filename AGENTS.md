@@ -19,6 +19,8 @@ A pure-Dart audio library backed by a Rust crate through FFI and Dart build hook
   - `tool/build_wasm.dart`: builds `frustbite.wasm` (release, `wasm32-unknown-unknown`) and copies it to the given path.
   - `test/`: Dart tests; `test/fixtures/`: audio fixtures.
 - Root `pubspec.yaml`: pub workspace; `hooks.user_defines.frustbite.local_build: true` builds from source.
+- `docs/DECISIONS.md`: rulings R1-R27 (stage 1) and D-A..D-L (distribution v2) with status; `docs/ROADMAP.md`: stages 2-5 and open items. Add a decision there when you make one.
+- `mise.toml`: optional task runner (`fmt`, `fmt:check`, `analyze`, `test`, `check`, `build:native`, `verify:native`, `stage`, `publish:check`) wrapping the commands below.
 
 ## Commands
 
@@ -69,7 +71,7 @@ npm install
 npm run docs:dev
 npm run docs:build && npm run docs:check
 
-# Prebuilt native assets for this host (output dir may be relative)
+# Native libraries for this host (output dir may be relative)
 scripts/build.sh [output-dir] [target...]
 
 # Stage the package and dry-run the publish (from packages/frustbite/; needs the 12 libraries,

@@ -29,9 +29,12 @@ dependencies:
   frustbite: ^0.0.2
 ```
 
-The build hook downloads the prebuilt native library for your platform from the
-matching GitHub Release and verifies its SHA-256 hash. Supported platforms:
-Android, iOS, Linux (glibc 2.35 or newer), macOS, Windows and the web.
+The package carries the prebuilt native library for every native target (12
+in all) in its `prebuilt/` directory, and the build hook picks the one for your
+target. The build is offline and hermetic: nothing is downloaded, no Rust
+toolchain is needed, and the hook verifies each library against the SHA-256 in
+`prebuilt/checksums.json` before it is used. Supported platforms: Android, iOS,
+Linux (glibc 2.17 or newer), macOS, Windows and the web.
 
 ## Platform requirements
 
@@ -42,7 +45,7 @@ The prebuilt binaries target these minimum OS versions:
 | iOS | 16.0 |
 | macOS | 13.0 |
 | Android | API 30 (Android 11) |
-| Linux | glibc 2.35 (Ubuntu 22.04, Debian 12) |
+| Linux | glibc 2.17 (CentOS 7 and every newer distribution) |
 
 A Flutter app has to raise its own minimums to match, or the build fails or the
 app does not load the library:
@@ -54,7 +57,43 @@ app does not load the library:
 - **Android**: in `android/app/build.gradle(.kts)` set `minSdk = 30`
   (`minSdkVersion 30` in older Groovy files).
 
-For other minimums, build from source (see [Build options](#build-options)).
+Windows binaries link the C runtime statically, so no Visual C++
+Redistributable is needed. For other minimums, build from source (see
+[Build options](#build-options)).
+
+### iOS privacy manifest
+
+Apple requires an app to declare the "required reason" APIs that its code, and
+the libraries in it, call. The iOS libraries import `stat` and `fstat` (from the
+Rust standard library, to open a file and read its size), which Apple lists
+under the **file timestamp** category. The library never reads or exposes a
+timestamp, but Apple matches on the API, not on how it is used. No other
+required-reason API is imported: not `getattrlist`, `mach_absolute_time` or the
+disk space calls (`statfs`, `statvfs`). A pure Dart package cannot ship a
+`PrivacyInfo.xcprivacy` of its own, so the app declares the reason in its
+`ios/Runner/PrivacyInfo.xcprivacy`:
+
+```xml
+<key>NSPrivacyAccessedAPITypes</key>
+<array>
+  <dict>
+    <key>NSPrivacyAccessedAPIType</key>
+    <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+    <key>NSPrivacyAccessedAPITypeReasons</key>
+    <array>
+      <!-- files inside the app container (bundled or downloaded assets) -->
+      <string>C617.1</string>
+      <!-- files the user picked, for example with a document picker -->
+      <string>3B52.1</string>
+    </array>
+  </dict>
+</array>
+```
+
+Declare only the reasons that match what your app does: `C617.1` if it opens
+audio files in its own container, `3B52.1` if it opens files the user granted
+access to. Third-party-SDK reason `0A2A.1` is for SDK code and does not fit an
+app that calls Frustbite. macOS needs no manifest.
 
 ## Quick start
 
@@ -129,8 +168,9 @@ final waveform = await audio.waveformAsync(buckets: 200);
 
 ## Web
 
-Download `frustbite.wasm` from the GitHub Release matching the package version
-and put it in the web root, then initialize before first use:
+Download `frustbite.wasm` from the GitHub Release `frustbite-v<version>`
+matching the package version (for example `frustbite-v0.0.2`) and put it in the
+web root, then initialize before first use:
 
 ```dart
 await Frustbite.initialize();
@@ -143,34 +183,67 @@ JavaScript error instead of `UnknownFrustbiteException`.
 
 ## Build options
 
-By default the prebuilt library is downloaded. Add user defines to your
-application's `pubspec.yaml` to build from source instead (needs a Rust
-toolchain):
+By default (`source: auto`) the hook uses the bundled library. The build is
+offline and hermetic: no network access and no Rust toolchain are needed, and
+the hook rejects any library whose SHA-256 differs from `prebuilt/checksums.json`
+with a "checksum mismatch" error (clear the pub cache entry and reinstall). To
+check by hand, hash a file under `prebuilt/` and compare it with its entry in
+that JSON. Every target ships one file name (`libfrustbite.so`,
+`libfrustbite.dylib` or `frustbite.dll`), and only the directory
+(`prebuilt/<os>-<arch>[-sim]/`) tells the targets apart.
+
+Set user defines in your application's `pubspec.yaml`. The hook resolves the
+library in this order:
+
+1. `library: <path>` uses that file as is. It must exist.
+2. `source` picks where the library comes from:
+   - `auto` (default): the bundled library if there is one, else `cargo build`
+     if the Rust crate and cargo are present, else a `StateError` that lists
+     these options.
+   - `prebuilt`: only the bundled library; an error if it is missing.
+   - `build`: only `cargo build --release --locked` of the Rust crate.
+   - `none`: add no library. The app then fails at the first Frustbite call
+     with the "missing native library" error.
+3. `formats` and `local_build: true` both mean `source: build`.
 
 ```yaml
 hooks:
   user_defines:
     frustbite:
-      local_build: true
+      # Your own build of the library; takes precedence over `source`.
+      # library: /opt/frustbite/libfrustbite.so
+      source: build
       # Optional, implies a source build: compile only these codecs.
       # Names: aac, alac, flac, mp3, opus, vorbis, wav.
       formats: [mp3, wav]
 ```
 
-Source builds work **only with a git dependency**: the Rust crate is not
-included in the package on pub.dev, and pub clones the whole repository for a
-git dependency. Without it the build fails with a `StateError` that says so.
+`source` also takes a map per OS, with an optional `default`. Keys are Dart OS
+names (`android`, `ios`, `linux`, `macos`, `windows`); an unknown key or value is
+an error, never a silent `auto`:
 
 ```yaml
-dependencies:
-  frustbite:
-    git:
-      url: https://github.com/sb-dor/frustbite
-      path: packages/frustbite
+hooks:
+  user_defines:
+    frustbite:
+      source:
+        default: prebuilt
+        linux: build
 ```
 
-With no user defines the hook downloads prebuilt binaries, which works with the
-pub.dev package.
+Source builds work from the pub.dev package too: it carries the crate in
+`rust/` (a repository checkout or git dependency uses `native/`). The hook
+finds `cargo` on `PATH`, then in `$CARGO_HOME/bin`, then in `~/.cargo/bin`.
+The crate pins its toolchain (`rust-toolchain.toml`), which rustup installs on
+the first build.
+
+## Prebuilt binaries
+
+- Linux: built with `cargo zigbuild` against glibc 2.17, with libgcc linked
+  statically; CI fails a build that needs a newer glibc.
+- Android: 16 KB page-aligned; Apple: `@rpath/libfrustbite.dylib` install
+  name; Windows: static C runtime.
+- Every library passes `tool/verify_native.sh` in CI before a release.
 
 ## Performance
 

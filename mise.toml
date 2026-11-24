@@ -1,0 +1,60 @@
+# Optional task runner: `mise run <task>` (https://mise.jdx.dev). Every task
+# wraps a command from AGENTS.md / CONTRIBUTING.md, so plain shell works too.
+# Rust is pinned by native/rust-toolchain.toml (rustup), and Dart / Flutter
+# follow the stable channel in CI, so only Node (docs site) is pinned here.
+
+[tools]
+node = "22"
+
+[tasks.fmt]
+description = "Format Rust and Dart"
+run = [
+  "cargo fmt --manifest-path native/Cargo.toml",
+  "dart format packages/frustbite",
+]
+
+[tasks."fmt:check"]
+description = "Check formatting (Rust and Dart)"
+run = [
+  "cargo fmt --manifest-path native/Cargo.toml --check",
+  "dart format --set-exit-if-changed packages/frustbite",
+]
+
+[tasks.analyze]
+description = "Clippy and dart analyze"
+run = [
+  "cargo clippy --manifest-path native/Cargo.toml --all-targets -- -D warnings",
+  "cd packages/frustbite && dart analyze --fatal-infos",
+]
+
+[tasks.test]
+description = "Rust and Dart tests"
+run = [
+  "cargo test --manifest-path native/Cargo.toml",
+  "cd packages/frustbite && dart test",
+]
+
+[tasks.check]
+description = "Everything CI checks on a pull request (except wasm and docs)"
+depends = ["fmt:check", "analyze", "test"]
+
+[tasks."build:native"]
+description = "Build the native libraries this host can build into build/native/<target>/"
+run = "scripts/build.sh build/native"
+
+[tasks."verify:native"]
+description = "Check one built library: mise run verify:native <file> <target>"
+run = "tool/verify_native.sh"
+
+[tasks.stage]
+description = "Stage the package outside the repo (needs the 12 libraries, e.g. from CI) into ../frustbite-stage"
+dir = "packages/frustbite"
+run = "dart tool/stage_package.dart --from-dir ../../build/native --out ../../../frustbite-stage"
+
+[tasks."publish:check"]
+description = "Check the staged .pubignore and dry-run the publish"
+depends = ["stage"]
+run = [
+  "cd packages/frustbite && dart tool/check_pubignore.dart ../../../frustbite-stage",
+  "cd ../frustbite-stage && dart pub publish --dry-run",
+]
