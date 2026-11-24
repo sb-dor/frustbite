@@ -5,6 +5,7 @@ import 'audio_info.dart';
 import 'audio_pcm.dart';
 import 'audio_tags.dart';
 import 'backend.dart';
+import 'enums.dart';
 import 'frustbite_exception.dart';
 import 'waveform.dart';
 
@@ -35,7 +36,10 @@ final class Frustbite {
 
   static void _checkBuckets(int buckets) {
     if (buckets < 1 || buckets > 100000) {
-      throw InvalidParameterException('buckets must be in 1..100000');
+      throw frustbiteError(
+        FrustbiteErrorCode.invalidParameter,
+        'buckets must be in 1..100000',
+      );
     }
   }
 
@@ -61,7 +65,12 @@ final class Frustbite {
   /// Throws [DecodingException] if [bytes] is empty or corrupt, and
   /// [UnsupportedFormatException] if the format is not supported.
   factory Frustbite.fromMemory(Uint8List bytes, {AudioContainer? format}) {
-    if (bytes.isEmpty) throw DecodingException('input buffer is empty');
+    if (bytes.isEmpty) {
+      throw frustbiteError(
+        FrustbiteErrorCode.decodingError,
+        'input buffer is empty',
+      );
+    }
     return Frustbite._(BackendAudio.fromMemory(bytes, format));
   }
 
@@ -73,7 +82,9 @@ final class Frustbite {
   /// [Frustbite.fromMemory] instead.
   factory Frustbite.fromFile(String path, {AudioContainer? format}) {
     BackendAudio.ensureFilesSupported();
-    if (path.trim().isEmpty) throw InvalidPathException('path is empty');
+    if (path.trim().isEmpty) {
+      throw frustbiteError(FrustbiteErrorCode.invalidPath, 'path is empty');
+    }
     return Frustbite._(BackendAudio.fromFile(path, format));
   }
 

@@ -241,10 +241,7 @@ final class WasmRuntime {
         );
         final handle = _u32(block);
         if (handle == 0) {
-          throw UnknownFrustbiteException(
-            FrustbiteErrorCode.unknown,
-            'input: memory',
-          );
+          throw frustbiteError(FrustbiteErrorCode.unknown, 'input: memory');
         }
         return handle;
       });
@@ -290,7 +287,7 @@ final class WasmRuntime {
       final bytes = _copyBytes(ptr, len);
       if (bytes.isEmpty) return AudioTags.empty;
       final json = jsonDecode(utf8.decode(bytes)) as Map<String, Object?>;
-      return AudioTags.fromJson(json);
+      return audioTagsFromJson(json);
     } finally {
       _freeBytes(ptr, len);
     }
@@ -394,7 +391,7 @@ final class WasmRuntime {
       return export();
     } catch (error) {
       _trapped = true;
-      throw UnknownFrustbiteException(
+      throw frustbiteError(
         FrustbiteErrorCode.unknown,
         '$context; the wasm module trapped: $error',
       );

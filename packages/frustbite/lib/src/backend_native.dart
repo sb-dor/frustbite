@@ -182,7 +182,7 @@ AudioTags nativeTags(int address) => ffi.using((arena) {
     final bytes = _copyBytes(out.value, outLen.value);
     if (bytes.isEmpty) return AudioTags.empty;
     final json = jsonDecode(utf8.decode(bytes)) as Map<String, Object?>;
-    return AudioTags.fromJson(json);
+    return audioTagsFromJson(json);
   } finally {
     _freeBytes(out.value, outLen.value);
   }

@@ -23,9 +23,16 @@ final class BackendAudio {
   static Future<WasmRuntime>? _loading;
 
   // Web has no NativeFinalizer; this is a best-effort safety net only.
-  static final _finalizer = Finalizer<(WasmRuntime, int)>(
-    (owner) => owner.$1.free(owner.$2),
-  );
+  //
+  // The callback must never throw: a trap inside wasm would otherwise surface
+  // as an uncaught asynchronous error.
+  static final _finalizer = Finalizer<(WasmRuntime, int)>((owner) {
+    try {
+      owner.$1.free(owner.$2);
+    } catch (_) {
+      // Nothing to do: the instance is already unusable or the handle is gone.
+    }
+  });
 
   static WasmRuntime get _current =>
       _runtime ??

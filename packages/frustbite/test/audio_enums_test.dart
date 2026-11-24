@@ -1,6 +1,7 @@
 import 'package:frustbite/frustbite.dart';
 import 'package:frustbite/src/audio_enums.dart';
 import 'package:frustbite/src/enums.dart';
+import 'package:frustbite/src/frustbite_exception.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -27,7 +28,7 @@ void main() {
 
   test('FrustbiteException.toString uses the runtime type', () {
     expect(
-      InvalidParameterException('x').toString(),
+      frustbiteError(FrustbiteErrorCode.invalidParameter, 'x').toString(),
       startsWith('InvalidParameterException:'),
     );
   });

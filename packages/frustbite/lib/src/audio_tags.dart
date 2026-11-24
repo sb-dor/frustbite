@@ -16,21 +16,6 @@ final class AudioTags {
     this.discTotal,
   });
 
-  /// Parses the JSON object produced by the engine.
-  factory AudioTags.fromJson(Map<String, Object?> json) => AudioTags(
-    title: json['title'] as String?,
-    artist: json['artist'] as String?,
-    album: json['album'] as String?,
-    albumArtist: json['albumArtist'] as String?,
-    genre: json['genre'] as String?,
-    comment: json['comment'] as String?,
-    year: (json['year'] as num?)?.toInt(),
-    track: (json['track'] as num?)?.toInt(),
-    trackTotal: (json['trackTotal'] as num?)?.toInt(),
-    disc: (json['disc'] as num?)?.toInt(),
-    discTotal: (json['discTotal'] as num?)?.toInt(),
-  );
-
   /// Tags of a source that has none.
   static const empty = AudioTags();
 
@@ -42,6 +27,21 @@ final class AudioTags {
       'AudioTags(title: $title, artist: $artist, '
       'album: $album, year: $year)';
 }
+
+/// Parses the JSON object produced by the engine. Not exported.
+AudioTags audioTagsFromJson(Map<String, Object?> json) => AudioTags(
+  title: json['title'] as String?,
+  artist: json['artist'] as String?,
+  album: json['album'] as String?,
+  albumArtist: json['albumArtist'] as String?,
+  genre: json['genre'] as String?,
+  comment: json['comment'] as String?,
+  year: (json['year'] as num?)?.toInt(),
+  track: (json['track'] as num?)?.toInt(),
+  trackTotal: (json['trackTotal'] as num?)?.toInt(),
+  disc: (json['disc'] as num?)?.toInt(),
+  discTotal: (json['discTotal'] as num?)?.toInt(),
+);
 
 /// Embedded cover art.
 final class AudioCover {

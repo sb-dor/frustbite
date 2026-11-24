@@ -1,9 +1,15 @@
 import 'enums.dart';
 
 /// Container format of an audio source.
+///
+/// New members may be added in minor versions, so do not switch exhaustively
+/// over this without a default case.
 enum AudioContainer { mp3, mp4, flac, ogg, wav, mkv, adts }
 
 /// Codec of the audio stream.
+///
+/// New members may be added in minor versions, so do not switch exhaustively
+/// over this without a default case.
 enum AudioCodec { mp3, aac, alac, flac, vorbis, opus, pcm }
 
 /// How a waveform bucket's amplitude is computed.
