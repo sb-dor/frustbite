@@ -112,20 +112,34 @@ final class BackendAudio implements ffi.Finalizable {
   AudioPcm decode() => nativeDecode(address);
 
   // The closures capture only ints and enums, never `this`: a BackendAudio is
-  // Finalizable and must not cross isolates. The caller keeps `this` alive.
+  // Finalizable and must not cross isolates. Instead `this` is referenced
+  // after the await, so it stays reachable (no finalizer) until the call ends.
   Future<Waveform> waveformAsync(
     int buckets,
     WaveformMode mode,
     bool perChannel,
-  ) {
+  ) async {
     final addr = address;
-    return Isolate.run(() => nativeWaveform(addr, buckets, mode, perChannel));
+    try {
+      return await Isolate.run(
+        () => nativeWaveform(addr, buckets, mode, perChannel),
+      );
+    } finally {
+      _keepAlive();
+    }
   }
 
-  Future<AudioPcm> decodeAsync() {
+  Future<AudioPcm> decodeAsync() async {
     final addr = address;
-    return Isolate.run(() => nativeDecode(addr));
+    try {
+      return await Isolate.run(() => nativeDecode(addr));
+    } finally {
+      _keepAlive();
+    }
   }
+
+  @pragma('vm:never-inline')
+  void _keepAlive() {}
 
   void dispose() {
     _finalizer.detach(this);

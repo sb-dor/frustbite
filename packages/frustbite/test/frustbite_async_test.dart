@@ -63,32 +63,45 @@ void main() {
     await expectLater(audio.decodeAsync(), throwsStateError);
   });
 
-  test('errors in the isolate keep their type', () async {
-    final bad = Frustbite.fromMemory(fixture('truncated.mp3'));
-    addTearDown(bad.dispose);
-    Object? error;
-    try {
-      await bad.decodeAsync();
-    } on Object catch (e) {
-      error = e;
-    }
-    // Either decodes leniently or throws a typed FrustbiteException.
-    if (error != null) expect(error, isA<FrustbiteException>());
-  });
+  Frustbite openThenDeleteFile() {
+    final dir = Directory.systemTemp.createTempSync('frustbite_async_');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/tone.wav')
+      ..writeAsBytesSync(fixture('tone.wav'));
+    final a = Frustbite.fromFile(file.path);
+    addTearDown(a.dispose);
+    file.deleteSync();
+    return a;
+  }
+
+  test(
+    'decodeAsync error from the isolate keeps its type and releases busy',
+    () async {
+      final a = openThenDeleteFile();
+      await expectLater(a.decodeAsync(), throwsA(isA<InvalidPathException>()));
+      expect(a.dispose, returnsNormally);
+      expect(a.isDisposed, isTrue);
+    },
+  );
+
+  test(
+    'waveformAsync error from the isolate keeps its type and releases busy',
+    () async {
+      final a = openThenDeleteFile();
+      await expectLater(
+        a.waveformAsync(),
+        throwsA(isA<InvalidPathException>()),
+      );
+      expect(a.dispose, returnsNormally);
+      expect(a.isDisposed, isTrue);
+    },
+  );
 
   test('waveformAsync(buckets: 0) throws InvalidParameterException', () async {
     await expectLater(
       audio.waveformAsync(buckets: 0),
       throwsA(isA<InvalidParameterException>()),
     );
-  });
-
-  test('busy counter is released after a failed async call', () async {
-    await expectLater(
-      audio.waveformAsync(buckets: 0),
-      throwsA(isA<InvalidParameterException>()),
-    );
-    expect(audio.dispose, returnsNormally);
   });
 
   test('waveform(buckets: (1 << 32) + 1) throws InvalidParameterException', () {
