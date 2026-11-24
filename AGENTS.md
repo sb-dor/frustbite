@@ -30,6 +30,10 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 
+# Regenerate THIRD_PARTY_LICENSES.md (root + packages/frustbite copy) after any Cargo.lock change;
+# CI runs it with --check (from the repo root)
+python3 -I native/tool/third_party_licenses.py
+
 # Regenerate header + bindings (from packages/frustbite/); needs `cargo install cbindgen`
 dart tool/generate_bindings.dart
 

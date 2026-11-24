@@ -73,6 +73,8 @@ jobs:
           key: cargo-registry-${{ hashFiles('native/Cargo.lock') }}
           restore-keys: cargo-registry-
       - run: cargo fmt --check
+      # THIRD_PARTY_LICENSES.md (root and package copy) must match Cargo.lock.
+      - run: python3 -I tool/third_party_licenses.py --check
       - run: cargo clippy --all-targets -- -D warnings
       # A reduced format set must still compile without warnings.
       - run: cargo clippy --all-targets --no-default-features --features wav -- -D warnings
@@ -200,6 +202,7 @@ jobs:
     permissions:
       contents: write # create the GitHub Release
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: asset-*
@@ -209,16 +212,21 @@ jobs:
         with:
           name: wasm
           path: assets/
+      # Third-party notices must ship with the binaries (the rust job checks
+      # the file is up to date with Cargo.lock).
+      - name: Add the third-party licenses
+        run: cp THIRD_PARTY_LICENSES.md assets/
       - name: Check the asset list
         env:
-          # Keep in sync with the build matrix targets.
+          # Keep in sync with the build matrix targets. The release holds one
+          # file per target (12), frustbite.wasm and THIRD_PARTY_LICENSES.md (14).
           TARGETS: >-
             android_armv7 android_arm64 android_x86_64 linux_aarch64 linux_x86_64
             ios_arm64 ios_sim_arm64 ios_sim_x86_64 macos_arm64 macos_x86_64
             windows_arm64 windows_x86_64
         run: |
           ls -l assets/
-          expected=(frustbite.wasm)
+          expected=(frustbite.wasm THIRD_PARTY_LICENSES.md)
           for target in $TARGETS; do
             case "$target" in
               ios_* | macos_*) expected+=("libfrustbite_${target}.dylib") ;;
