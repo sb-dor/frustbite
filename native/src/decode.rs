@@ -7,7 +7,7 @@ use symphonia::core::units::Duration;
 
 use crate::codecs;
 use crate::error::FrustbiteErrorCode as Code;
-use crate::probe::{FrustbiteAudio, MAX_CONSECUTIVE_SCAN_ERRORS, map_error, open_reader};
+use crate::probe::{FrustbiteAudio, MAX_CONSECUTIVE_DECODE_ERRORS, map_error, open_reader};
 
 /// A fully decoded source.
 #[derive(Debug)]
@@ -31,6 +31,7 @@ pub struct PacketDecoder {
     decoder: Box<dyn AudioDecoder + 'static>,
     track_id: u32,
     channels: usize,
+    sample_rate: u32,
     /// Frames still to drop from the start of the output (Opus pre-skip).
     skip_frames: u64,
     /// The decoder does not trim by packet (`trim_start`/`trim_end`) itself.
@@ -64,6 +65,7 @@ impl PacketDecoder {
             decoder,
             track_id: probed.track_id,
             channels: probed.channels as usize,
+            sample_rate: probed.sample_rate,
             skip_frames: probed.pre_skip,
             // MP3 and Vorbis trim inside the decoder; our Opus decoder (the only one with a
             // pre-skip) leaves all trimming to the caller. The rest never get trims.
@@ -75,8 +77,13 @@ impl PacketDecoder {
     }
 
     /// Sample rate of the decoded output.
-    pub fn sample_rate_hint(audio: &FrustbiteAudio) -> u32 {
-        audio.probed().sample_rate
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    /// Channel count of the decoded output.
+    pub fn channels(&self) -> usize {
+        self.channels
     }
 
     /// Decodes the next non-empty packet. The slice is valid until the next call and holds
@@ -144,7 +151,7 @@ impl PacketDecoder {
             }
             SymphoniaError::DecodeError(_) => {
                 self.consecutive_errors += 1;
-                if self.consecutive_errors >= MAX_CONSECUTIVE_SCAN_ERRORS {
+                if self.consecutive_errors >= MAX_CONSECUTIVE_DECODE_ERRORS {
                     Err(Code::DecodingError)
                 } else {
                     Ok(true)
@@ -168,12 +175,13 @@ impl FrustbiteAudio {
             let _ = samples.try_reserve_exact(count);
         }
         let mut decoder = PacketDecoder::open(self)?;
+        let sample_rate = decoder.sample_rate();
         while let Some(chunk) = decoder.next_chunk()? {
             samples.extend_from_slice(chunk);
         }
         Ok(Decoded {
             samples,
-            sample_rate: PacketDecoder::sample_rate_hint(self),
+            sample_rate,
             channels,
         })
     }
@@ -290,8 +298,9 @@ mod tests {
 
     #[test]
     fn decode_frames_differ_from_info_by_a_documented_tolerance() {
-        // AAC in MP4: info uses the track duration, which excludes the 1024-frame encoder
-        // priming; decoding emits every packet, so it is up to one packet longer.
+        // AAC in MP4: info uses the mdhd duration without the edit list, so it includes the
+        // 1024-frame encoder priming; decoding yields priming plus padding, so the two differ
+        // by up to one packet.
         // WebM Opus: no end trim exists (Symphonia drops DiscardPadding), so decoding keeps the
         // tail padding, and the duration in the info comes from millisecond timestamps.
         for (name, tolerance) in [("tone.m4a", 1024), ("tone.webm", 960)] {

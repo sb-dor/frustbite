@@ -10,7 +10,12 @@ crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 # Pure-Rust demuxers and decoders. Codecs and containers are enabled per Cargo feature below.
-symphonia = { version = "0.6.1", default-features = false, features = ["id3v1", "id3v2"] }
+# Pinned exactly: probe.rs works around symphonia-core 0.6.1 packet.rs:340 (MP3 trims left in
+# `dur`); an upstream fix would make that workaround subtract twice. Re-check on any bump.
+symphonia = { version = "=0.6.1", default-features = false, features = ["id3v1", "id3v2"] }
+# Also pinned directly: the buggy `PacketBuilder` lives in symphonia-core, which `symphonia`
+# alone would let float within 0.6.x.
+symphonia-core = "=0.6.1"
 opus-pure = { version = "=0.2.5", optional = true, default-features = false }
 
 # Keep in sync with `supportedFormats` in packages/frustbite/lib/src/hook/local_build.dart.

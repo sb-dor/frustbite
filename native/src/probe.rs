@@ -147,7 +147,10 @@ pub struct FrustbiteAudioInfo {
     pub bits_per_sample: u32,
     /// Average bitrate in bits per second; 0 when unknown.
     pub bitrate: u32,
-    /// Playable frames per channel, after encoder delay and padding.
+    /// Playable frames per channel, after encoder delay and padding. Exception: for AAC in
+    /// MP4 (m4a) it comes from the mdhd duration without the edit list, so it includes the
+    /// 1024-frame encoder priming; decoding yields priming plus padding, so it is not exactly
+    /// the number of playable frames.
     pub total_frames: u64,
     /// Duration in microseconds.
     pub duration_us: u64,
@@ -171,7 +174,7 @@ pub(crate) struct Probed {
 }
 
 /// Consecutive undecodable packets after which a duration scan or a decode gives up.
-pub(crate) const MAX_CONSECUTIVE_SCAN_ERRORS: u32 = 64;
+pub(crate) const MAX_CONSECUTIVE_DECODE_ERRORS: u32 = 64;
 
 /// An opened audio source. Immutable, so it can be shared between threads.
 pub struct FrustbiteAudio {
@@ -456,8 +459,11 @@ fn scan_frames(
                 consecutive_errors = 0;
                 if packet.track_id == probed.track_id {
                     let mut dur = u128::from(packet.dur.get());
-                    // Symphonia's MP3 demuxer reports the trims but leaves them inside `dur`
-                    // (Ogg subtracts them), so drop them here to count playable frames.
+                    // WORKAROUND for an upstream bug: symphonia-core 0.6.1 src/packet.rs:340
+                    // (`PacketBuilder::trimmed_dur`) subtracts the builder's zeroed trim fields
+                    // instead of the computed trims, so the MP3 demuxer leaves the trims inside
+                    // `dur`. We subtract them here. The symphonia crates are pinned to `=0.6.1`
+                    // in Cargo.toml so a fix upstream cannot make this subtract twice.
                     if probed.mp3_trims_trusted {
                         let trim = packet
                             .trim_start
@@ -475,7 +481,7 @@ fn scan_frames(
             }
             Err(SymphoniaError::DecodeError(_)) if units > 0 => {
                 consecutive_errors += 1;
-                if consecutive_errors >= MAX_CONSECUTIVE_SCAN_ERRORS {
+                if consecutive_errors >= MAX_CONSECUTIVE_DECODE_ERRORS {
                     break;
                 }
             }
@@ -619,6 +625,11 @@ mod tests {
             assert_eq!((click.channels, click.total_frames), (1, 2205));
             assert_eq!(click.duration_us, 50_000);
             assert_eq!(info("silence.flac").duration_us, 1_000_000);
+        }
+
+        #[test]
+        fn info_mp3_frames_are_exact() {
+            assert_eq!(info("tone.mp3").total_frames, 132_300);
         }
 
         #[test]
