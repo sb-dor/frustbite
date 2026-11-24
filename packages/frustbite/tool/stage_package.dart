@@ -12,7 +12,8 @@
 // with the targets of `getNameForTarget` (`macos_arm64`). `--from-release`
 // downloads the flattened release assets (`libfrustbite_macos_arm64.dylib`)
 // with `gh`, un-flattens them and checks them against the release's
-// `checksums.json`. `--allow-partial` accepts fewer than 12 libraries and is
+// `checksums.json`; the working tree must be the clean checkout of that tag,
+// since the Dart and Rust sources are staged from it. `--allow-partial` accepts fewer than 12 libraries and is
 // for local testing only; CI never passes it.
 //
 // What is staged:
@@ -46,7 +47,11 @@ import 'package:path/path.dart' as p;
 
 /// Packaged for pub (`name/…` relative paths) from the git-tracked files of
 /// the package; these directories never are.
-const _packageExcludes = ['test/fixtures/', 'tool/'];
+const _packageExcludes = [
+  'test/fixtures/',
+  'test/stage_package_test.dart', // imports tool/, which is not published
+  'tool/',
+];
 
 /// The files of native/ the staged `rust/` holds (`src/` as a prefix).
 const _crateFiles = {
@@ -315,24 +320,121 @@ void _copy(File from, File to) {
   from.copySync(to.path);
 }
 
-/// Downloads the libraries of the GitHub release [tag] with `gh` into [into]
-/// as a `<target>/<file>` tree and checks them against the release's
-/// `checksums.json`. Returns the directory to pass as `fromDir`.
+/// Checks that the sources about to be staged are those of the release [tag]
+/// (`frustbite-v<version>`): the libraries come from the tag, the Dart and Rust
+/// sources from the working tree, and the two must agree.
+///
+/// [head] and [tagCommit] are `git rev-parse HEAD` and
+/// `git rev-parse <tag>^{commit}` (null when the tag does not exist locally),
+/// [porcelain] is `git status --porcelain -- packages/frustbite native`.
+void checkReleaseSource({
+  required String tag,
+  required String? head,
+  required String? tagCommit,
+  required String porcelain,
+  required String pubspecVersion,
+}) {
+  if (tag != 'frustbite-v$pubspecVersion') {
+    throw StageException(
+      'The tag $tag does not match the pubspec version $pubspecVersion '
+      '(expected frustbite-v$pubspecVersion).',
+    );
+  }
+  if (tagCommit == null) {
+    throw StageException(
+      'The tag $tag does not exist locally. Run `git fetch --tags`.',
+    );
+  }
+  if (head != tagCommit) {
+    throw StageException(
+      'HEAD ($head) is not the commit of $tag ($tagCommit). The staged '
+      'sources must be the released ones: `git checkout $tag` first.',
+    );
+  }
+  if (porcelain.trim().isNotEmpty) {
+    throw StageException(
+      'packages/frustbite or native has uncommitted changes, which would be '
+      'staged next to the released libraries:\n${porcelain.trim()}',
+    );
+  }
+}
+
+/// Runs [checkReleaseSource] with the real git state of [packageDir].
+Future<void> verifyReleaseSource(String tag, Directory packageDir) async {
+  Future<String?> git(List<String> args) async {
+    final result = await Process.run(
+      'git',
+      args,
+      workingDirectory: packageDir.path,
+    );
+    return result.exitCode == 0 ? (result.stdout as String).trim() : null;
+  }
+
+  final root = packageDir.parent.parent.path;
+  final porcelain = await git([
+    'status',
+    '--porcelain',
+    '--',
+    p.join(root, 'packages/frustbite'),
+    p.join(root, 'native'),
+  ]);
+  if (porcelain == null) {
+    throw StageException('git status failed in ${packageDir.path}');
+  }
+  checkReleaseSource(
+    tag: tag,
+    head: await git(['rev-parse', 'HEAD']),
+    tagCommit: await git(['rev-parse', '$tag^{commit}']),
+    porcelain: porcelain,
+    pubspecVersion: pubspecVersion(
+      File(p.join(packageDir.path, 'pubspec.yaml')).readAsStringSync(),
+    ),
+  );
+}
+
+/// The `version:` of a pubspec text.
+String pubspecVersion(String pubspec) {
+  final match = RegExp(
+    r'^version:\s*(\S+)',
+    multiLine: true,
+  ).firstMatch(pubspec);
+  if (match == null) throw StageException('pubspec.yaml has no version');
+  return match.group(1)!;
+}
+
+/// `owner/name` of the GitHub repository in a pubspec's `repository:` URL.
+String githubRepo(String pubspec) {
+  final match = RegExp(
+    r'^repository:\s*https://github\.com/([^/\s]+/[^/\s]+?)/?\s*$',
+    multiLine: true,
+  ).firstMatch(pubspec);
+  if (match == null) {
+    throw StageException('pubspec.yaml `repository:` is not a GitHub URL');
+  }
+  return match.group(1)!;
+}
+
+/// Downloads the libraries of the GitHub release [tag] of [repo]
+/// (`owner/name`) with `gh` into [into] as a `<target>/<file>` tree and checks
+/// them against the release's `checksums.json`. Returns the directory to pass
+/// as `fromDir`.
 Future<Directory> downloadRelease(
   String tag,
   Directory into, {
+  required String repo,
   required bool allowPartial,
 }) async {
-  final targets = stageTargets;
   final download = Directory(p.join(into.path, 'assets'))
     ..createSync(recursive: true);
   final result = await Process.run('gh', [
     'release',
     'download',
     tag,
+    '--repo',
+    repo,
     '--dir',
     download.path,
-    for (final target in targets) ...['--pattern', target.releaseAsset],
+    for (final target in stageTargets) ...['--pattern', target.releaseAsset],
     '--pattern',
     'checksums.json',
   ]);
@@ -341,10 +443,26 @@ Future<Directory> downloadRelease(
       'gh release download $tag failed (${result.exitCode}): ${result.stderr}',
     );
   }
-  final tree = Directory(p.join(into.path, 'tree'));
+  return unflattenRelease(
+    tag,
+    download,
+    Directory(p.join(into.path, 'tree')),
+    allowPartial: allowPartial,
+  );
+}
+
+/// Turns the flattened release assets in [assets] into the `<target>/<file>`
+/// tree [tree] and checks every library against the `checksums.json` among
+/// them. Returns [tree].
+Directory unflattenRelease(
+  String tag,
+  Directory assets,
+  Directory tree, {
+  required bool allowPartial,
+}) {
   final found = <String, String>{};
-  for (final target in targets) {
-    final asset = File(p.join(download.path, target.releaseAsset));
+  for (final target in stageTargets) {
+    final asset = File(p.join(assets.path, target.releaseAsset));
     if (!asset.existsSync()) {
       if (allowPartial) continue;
       throw StageException('Release $tag has no ${target.releaseAsset}');
@@ -353,7 +471,7 @@ Future<Directory> downloadRelease(
     _copy(asset, to);
     found[target.key] = sha256.convert(to.readAsBytesSync()).toString();
   }
-  final sums = File(p.join(download.path, 'checksums.json'));
+  final sums = File(p.join(assets.path, 'checksums.json'));
   if (!sums.existsSync()) {
     throw StageException('Release $tag has no checksums.json');
   }
@@ -369,13 +487,11 @@ Future<Directory> downloadRelease(
       );
     }
   }
-  if (!allowPartial) {
-    final extra = published.keys.toSet().difference(found.keys.toSet());
-    if (extra.isNotEmpty) {
-      throw StageException(
-        'Release $tag: checksums.json lists ${extra.join(', ')} with no asset',
-      );
-    }
+  final extra = published.keys.toSet().difference(found.keys.toSet());
+  if (extra.isNotEmpty && !allowPartial) {
+    throw StageException(
+      'Release $tag: checksums.json lists ${extra.join(', ')} with no asset',
+    );
   }
   return tree;
 }
@@ -411,10 +527,14 @@ Future<void> main(List<String> args) async {
   try {
     final Directory source;
     if (fromRelease != null) {
+      await verifyReleaseSource(fromRelease, packageDir);
       scratch = await Directory.systemTemp.createTemp('frustbite_release_');
       source = await downloadRelease(
         fromRelease,
         scratch,
+        repo: githubRepo(
+          File(p.join(packageDir.path, 'pubspec.yaml')).readAsStringSync(),
+        ),
         allowPartial: allowPartial,
       );
     } else {

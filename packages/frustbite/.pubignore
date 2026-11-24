@@ -1,6 +1,8 @@
 # Test audio fixtures and the prebuilt test module are not needed by users.
 test/fixtures/
 test/frustbite.wasm
+# Imports tool/, which is not published.
+test/stage_package_test.dart
 
 # Developer tooling.
 tool/

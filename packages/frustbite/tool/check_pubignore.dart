@@ -60,6 +60,7 @@ List<String> checkPubignore(Directory staged) {
     'rust/target/release/libfrustbite.so',
     'rust/target/debug/build/x',
     'test/fixtures/sample.mp3',
+    'test/stage_package_test.dart',
   ]) {
     if (!rules.ignores(path)) {
       problems.add('.pubignore does not exclude $path.');
