@@ -32,75 +32,118 @@ impl FrustbiteWaveformMode {
     }
 }
 
-/// Per-block, per-channel summary of the whole stream (block-major: `[block][channel]`).
+/// A source of decoded interleaved chunks; `PacketDecoder` in production, a mock in tests.
+trait ChunkSource {
+    fn channels(&self) -> usize;
+    fn next_chunk(&mut self) -> Result<Option<&[f32]>, Code>;
+}
+
+impl ChunkSource for PacketDecoder {
+    fn channels(&self) -> usize {
+        PacketDecoder::channels(self)
+    }
+
+    fn next_chunk(&mut self) -> Result<Option<&[f32]>, Code> {
+        PacketDecoder::next_chunk(self)
+    }
+}
+
+/// Per-block, per-channel summary of the whole stream, for one mode.
+///
+/// Memory: one `f32` per block and channel, i.e. `4 * channels` bytes per 256 frames
+/// (8 bytes for stereo: about 5 MB for an hour at 44.1 kHz), plus the accumulators.
 struct Summary {
     channels: usize,
-    /// `max |x|` per block and channel.
-    peaks: Vec<f32>,
-    /// `sum x^2` per block and channel.
-    squares: Vec<f64>,
-    /// Frames per block (the last block may be short).
-    counts: Vec<u32>,
+    mode: FrustbiteWaveformMode,
+    /// Block-major `[block][channel]`: `max |x|` for Peak, `sum x^2` for Rms (an `f32` is
+    /// precise enough over at most 256 samples).
+    values: Vec<f32>,
+    /// Frames in the last block; every other block holds exactly `BLOCK`. 0 without blocks.
+    last_frames: usize,
+}
+
+/// Blocks `[lo, hi)` of bucket `bucket` out of `buckets`, for `blocks` blocks:
+/// `[floor(i*B/n), max(floor((i+1)*B/n), floor(i*B/n)+1))` clamped to `B`. The products are
+/// computed in `u64`: `usize` is 32-bit on wasm32 and they exceed `u32::MAX` for long files.
+fn bucket_range(bucket: usize, buckets: usize, blocks: usize) -> (usize, usize) {
+    let edge = |i: usize| (i as u64 * blocks as u64 / buckets as u64) as usize;
+    let lo = edge(bucket);
+    (lo, edge(bucket + 1).max(lo + 1).min(blocks))
 }
 
 impl Summary {
     fn blocks(&self) -> usize {
-        self.counts.len()
+        self.values.len() / self.channels
     }
 
     /// Reads the stream once, keeping only the per-block summary, never the PCM.
-    fn collect(decoder: &mut PacketDecoder) -> Result<Self, Code> {
-        let channels = decoder.channels();
+    /// `expected_frames` (from the container, if known) only sizes a best-effort reservation.
+    fn collect(
+        source: &mut impl ChunkSource,
+        mode: FrustbiteWaveformMode,
+        expected_frames: Option<u64>,
+    ) -> Result<Self, Code> {
+        let channels = source.channels();
         let mut summary = Self {
             channels,
-            peaks: Vec::new(),
-            squares: Vec::new(),
-            counts: Vec::new(),
+            mode,
+            values: Vec::new(),
+            last_frames: 0,
         };
-        let mut peak = vec![0f32; channels];
-        let mut square = vec![0f64; channels];
-        let mut in_block = 0u32;
+        if let Some(frames) = expected_frames {
+            // A lying header must not abort the process: best-effort, capped (64 MB).
+            let blocks = frames / BLOCK as u64 + 1;
+            let wanted = blocks.saturating_mul(channels as u64).min(1 << 24);
+            let _ = summary.values.try_reserve(wanted as usize);
+        }
+        let mut acc = vec![0f32; channels];
+        let mut in_block = 0usize;
         loop {
-            let chunk = match decoder.next_chunk() {
+            let chunk = match source.next_chunk() {
                 Ok(Some(chunk)) => chunk,
                 Ok(None) => break,
                 // Like the info scan: a stream that breaks down midway still yields what was
                 // decoded; only a source that yields nothing is an error.
-                Err(code) if summary.counts.is_empty() && in_block == 0 => return Err(code),
+                Err(code) if summary.values.is_empty() && in_block == 0 => return Err(code),
                 Err(_) => break,
             };
             for frame in chunk.chunks_exact(channels) {
-                for (channel, &sample) in frame.iter().enumerate() {
+                for (slot, &sample) in acc.iter_mut().zip(frame) {
                     // Non-finite samples would poison a block: count them as silence.
                     let sample = if sample.is_finite() { sample } else { 0.0 };
-                    peak[channel] = peak[channel].max(sample.abs());
-                    square[channel] += f64::from(sample) * f64::from(sample);
+                    match mode {
+                        FrustbiteWaveformMode::Peak => *slot = slot.max(sample.abs()),
+                        FrustbiteWaveformMode::Rms => *slot += sample * sample,
+                    }
                 }
                 in_block += 1;
-                if in_block as usize == BLOCK {
-                    summary.push(&mut peak, &mut square, &mut in_block);
+                if in_block == BLOCK {
+                    summary.values.extend_from_slice(&acc);
+                    acc.fill(0.0);
+                    in_block = 0;
+                    summary.last_frames = BLOCK;
                 }
             }
         }
         if in_block > 0 {
-            summary.push(&mut peak, &mut square, &mut in_block);
+            summary.values.extend_from_slice(&acc);
+            summary.last_frames = in_block;
         }
         Ok(summary)
     }
 
-    fn push(&mut self, peak: &mut [f32], square: &mut [f64], in_block: &mut u32) {
-        self.peaks.extend_from_slice(peak);
-        self.squares.extend_from_slice(square);
-        self.counts.push(*in_block);
-        peak.fill(0.0);
-        square.fill(0.0);
-        *in_block = 0;
+    /// Frames covered by blocks `[lo, hi)`.
+    fn frames(&self, lo: usize, hi: usize) -> u64 {
+        let mut frames = ((hi - lo) * BLOCK) as u64;
+        if hi == self.blocks() {
+            frames -= (BLOCK - self.last_frames) as u64;
+        }
+        frames
     }
 
-    /// Maps the blocks onto `buckets`: bucket `i` covers blocks
-    /// `[floor(i*B/buckets), max(floor((i+1)*B/buckets), floor(i*B/buckets)+1))`, clamped to
-    /// `B`. With more buckets than blocks, neighbours repeat a block, so there is no gap.
-    fn buckets(&self, buckets: usize, mode: FrustbiteWaveformMode, per_channel: bool) -> Vec<f32> {
+    /// Maps the blocks onto `buckets` (see `bucket_range`). With more buckets than blocks,
+    /// neighbours repeat a block, so there is no gap.
+    fn buckets(&self, buckets: usize, per_channel: bool) -> Vec<f32> {
         let series = if per_channel { self.channels } else { 1 };
         let mut out = vec![0f32; buckets * series];
         let blocks = self.blocks();
@@ -108,8 +151,8 @@ impl Summary {
             return out;
         }
         for bucket in 0..buckets {
-            let lo = bucket * blocks / buckets;
-            let hi = ((bucket + 1) * blocks / buckets).max(lo + 1).min(blocks);
+            let (lo, hi) = bucket_range(bucket, buckets, blocks);
+            let frames = self.frames(lo, hi);
             for s in 0..series {
                 // Merged: every channel contributes; per channel: only channel `s`.
                 let channels = if per_channel {
@@ -117,24 +160,24 @@ impl Summary {
                 } else {
                     0..self.channels
                 };
-                let value = match mode {
+                let value = match self.mode {
                     FrustbiteWaveformMode::Peak => {
                         let mut peak = 0f32;
                         for block in lo..hi {
                             for c in channels.clone() {
-                                peak = peak.max(self.peaks[block * self.channels + c]);
+                                peak = peak.max(self.values[block * self.channels + c]);
                             }
                         }
                         peak
                     }
                     FrustbiteWaveformMode::Rms => {
-                        let (mut sum, mut count) = (0f64, 0u64);
+                        let mut sum = 0f64;
                         for block in lo..hi {
                             for c in channels.clone() {
-                                sum += self.squares[block * self.channels + c];
-                                count += u64::from(self.counts[block]);
+                                sum += f64::from(self.values[block * self.channels + c]);
                             }
                         }
+                        let count = frames * channels.len() as u64;
                         if count == 0 {
                             0.0
                         } else {
@@ -167,8 +210,9 @@ impl FrustbiteAudio {
             return Err(Code::InvalidParameter);
         }
         let mut decoder = PacketDecoder::open(self)?;
-        let summary = Summary::collect(&mut decoder)?;
-        Ok(summary.buckets(buckets as usize, mode, per_channel))
+        let expected = self.probed().known_frames;
+        let summary = Summary::collect(&mut decoder, mode, expected)?;
+        Ok(summary.buckets(buckets as usize, per_channel))
     }
 }
 
@@ -190,6 +234,7 @@ mod tests {
 
     use FrustbiteWaveformMode::{Peak, Rms};
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_wav_peak_is_half() {
         let values = wave("tone.wav", 100, Peak, false);
@@ -199,6 +244,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_rms_of_sine() {
         let expected = 0.5 / 2f32.sqrt();
@@ -207,6 +253,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_per_channel_len() {
         let values = wave("tone.wav", 100, Peak, true);
@@ -224,6 +271,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_more_buckets_than_frames() {
         for mode in [Peak, Rms] {
@@ -244,6 +292,7 @@ mod tests {
         assert!(values[99] > 0.4, "{}", values[99]);
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_zero_buckets_invalid() {
         let audio = FrustbiteAudio::open_file(format!("{FIXTURES}tone.wav"), None).unwrap();
@@ -264,10 +313,11 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_channels_are_separate() {
-        // tone.wav: 440 Hz left, 880 Hz right, same amplitude, so both channels peak alike
-        // while merged Rms equals each channel's Rms.
+        // tone.wav: 440 Hz left, 880 Hz right, same amplitude, so the merged Rms equals
+        // each channel's Rms.
         let merged = wave("tone.wav", 10, Rms, false);
         let split = wave("tone.wav", 10, Rms, true);
         for i in 0..10 {
@@ -276,6 +326,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_empty_source_is_zeros() {
         let audio = FrustbiteAudio::open_memory(&crate::ffi::tests::empty_wav(), None).unwrap();
@@ -286,7 +337,8 @@ mod tests {
     #[test]
     fn waveform_truncated_mp3_covers_what_decodes() {
         let values = wave("truncated.mp3", 20, Peak, false);
-        assert!(values.iter().any(|&v| v > 0.0));
+        // The whole decoded part is the tone (amplitude 0.5), so the first half is loud.
+        assert!(values[..10].iter().all(|&v| v > 0.4), "{values:?}");
     }
 
     #[cfg(all(
@@ -304,5 +356,112 @@ mod tests {
             assert!(values.iter().all(|v| (0.0..=1.0).contains(v)), "{name}");
             assert!(values[32] > 0.4, "{name}");
         }
+    }
+
+    #[test]
+    fn bucket_ranges_cover_blocks_without_gaps_for_large_inputs() {
+        // 700_000 blocks x 100_000 buckets overflows u32 (and 32-bit usize on wasm32).
+        for (blocks, buckets) in [
+            (700_000, 100_000),
+            (1_000_000, 99_999),
+            (5, 100_000),
+            (1, 7),
+        ] {
+            let mut previous = (0usize, 0usize);
+            for bucket in 0..buckets {
+                let (lo, hi) = bucket_range(bucket, buckets, blocks);
+                assert!(lo < hi && hi <= blocks, "{bucket}: {lo}..{hi}");
+                if bucket == 0 {
+                    assert_eq!(lo, 0);
+                } else {
+                    // Monotonic and gap-free: never starts past the previous end, never moves back.
+                    assert!(lo >= previous.0 && hi >= previous.1, "{bucket}");
+                    assert!(lo <= previous.1, "gap at {bucket}");
+                }
+                previous = (lo, hi);
+            }
+            assert_eq!(previous.1, blocks);
+        }
+    }
+
+    #[test]
+    fn summary_maps_a_large_hand_built_summary() {
+        let blocks = 700_000;
+        let summary = Summary {
+            channels: 1,
+            mode: Peak,
+            values: (0..blocks).map(|b| (b % 1000) as f32 / 1000.0).collect(),
+            last_frames: BLOCK,
+        };
+        let out = summary.buckets(100_000, false);
+        assert_eq!(out.len(), 100_000);
+        assert!(out.iter().all(|v| (0.0..=1.0).contains(v)));
+        // Every bucket covers 7 blocks of an in-range ramp: its max is the ramp value.
+        assert!(out.iter().any(|&v| v > 0.9));
+    }
+
+    /// Yields the given chunks, then the final result.
+    struct Mock {
+        chunks: Vec<Vec<f32>>,
+        end: Result<(), Code>,
+        next: usize,
+    }
+
+    impl ChunkSource for Mock {
+        fn channels(&self) -> usize {
+            1
+        }
+
+        fn next_chunk(&mut self) -> Result<Option<&[f32]>, Code> {
+            let index = self.next;
+            self.next += 1;
+            match self.chunks.get(index) {
+                Some(chunk) => Ok(Some(chunk)),
+                None => self.end.map(|()| None),
+            }
+        }
+    }
+
+    #[test]
+    fn decode_failure_after_data_keeps_what_was_decoded() {
+        // What the packet loop reports after too many consecutive bad packets.
+        let mut mock = Mock {
+            chunks: vec![vec![0.5; 1024]],
+            end: Err(Code::DecodingError),
+            next: 0,
+        };
+        let summary = Summary::collect(&mut mock, Peak, None).unwrap();
+        assert_eq!(summary.blocks(), 4);
+        assert!(summary.buckets(8, false).iter().all(|&v| v == 0.5));
+    }
+
+    #[test]
+    fn decode_failure_with_nothing_decoded_is_an_error() {
+        let mut mock = Mock {
+            chunks: vec![],
+            end: Err(Code::DecodingError),
+            next: 0,
+        };
+        assert_eq!(
+            Summary::collect(&mut mock, Peak, None).err(),
+            Some(Code::DecodingError)
+        );
+    }
+
+    #[test]
+    fn partial_last_block_counts_only_its_frames() {
+        let mut mock = Mock {
+            chunks: vec![vec![0.5; BLOCK + 10]],
+            end: Ok(()),
+            next: 0,
+        };
+        let summary = Summary::collect(&mut mock, Rms, Some(u64::MAX)).unwrap();
+        assert_eq!((summary.blocks(), summary.last_frames), (2, 10));
+        assert!(
+            summary
+                .buckets(1, false)
+                .iter()
+                .all(|v| (v - 0.5).abs() < 1e-6)
+        );
     }
 }

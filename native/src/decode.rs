@@ -241,6 +241,7 @@ mod tests {
         assert!(energy(1, 880.0) > 20.0 * energy(1, 440.0), "{name}: right");
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn decode_wav_exact() {
         let decoded = decode("tone.wav").unwrap();
@@ -273,7 +274,7 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "flac")]
+    #[cfg(all(feature = "flac", feature = "wav"))]
     #[test]
     fn decode_flac_matches_wav() {
         let wav = decode("tone.wav").unwrap();

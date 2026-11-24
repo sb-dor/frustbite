@@ -514,10 +514,22 @@ mod tests {
         FrustbiteAudio::open_file(format!("{FIXTURES}{name}"), None)
     }
 
+    #[cfg(any(
+        feature = "wav",
+        all(
+            feature = "mp3",
+            feature = "aac",
+            feature = "alac",
+            feature = "flac",
+            feature = "vorbis",
+            feature = "opus"
+        )
+    ))]
     fn info(name: &str) -> FrustbiteAudioInfo {
         open(name).unwrap().info().unwrap()
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn info_wav() {
         let info = info("tone.wav");
@@ -706,6 +718,7 @@ mod tests {
         assert_eq!(stream.sample_rate, 48_000);
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn source_byte_length_counts_resident_bytes() {
         let bytes = std::fs::read(format!("{FIXTURES}tone.wav")).unwrap();

@@ -235,12 +235,12 @@ pub unsafe extern "C" fn frustbite_waveform(
     })
 }
 
-/// Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the `*out_len` it returned.
-/// Passing null is a no-op.
+/// Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the
+/// `*out_len` it returned. Passing null is a no-op.
 ///
 /// # Safety
-/// `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with the same `len`, not yet
-/// freed.
+/// `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with
+/// the same `len`, not yet freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn frustbite_free_f32(ptr: *mut f32, len: usize) {
     if ptr.is_null() {
@@ -382,6 +382,7 @@ pub(crate) mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn open_info_free_round_trip() {
         let bytes = std::fs::read(format!("{FIXTURES}tone.wav")).unwrap();
@@ -406,6 +407,7 @@ pub(crate) mod tests {
     }
 
     /// A WAV with a valid header and no sample data.
+    #[cfg(feature = "wav")]
     pub(crate) fn empty_wav() -> Vec<u8> {
         let mut wav = b"RIFF".to_vec();
         wav.extend(36u32.to_le_bytes());
@@ -424,6 +426,7 @@ pub(crate) mod tests {
         wav
     }
 
+    #[cfg(feature = "wav")]
     fn open_bytes(bytes: &[u8]) -> *mut FrustbiteAudio {
         let mut out: *mut FrustbiteAudio = ptr::null_mut();
         let code = unsafe {
@@ -438,6 +441,7 @@ pub(crate) mod tests {
         out
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn decode_round_trip() {
         let bytes = std::fs::read(format!("{FIXTURES}tone.wav")).unwrap();
@@ -454,6 +458,7 @@ pub(crate) mod tests {
         }
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn decode_empty_source_returns_null_and_zero_len() {
         let audio = open_bytes(&empty_wav());
@@ -469,6 +474,7 @@ pub(crate) mod tests {
         }
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn decode_null_pointers_are_invalid_pointer() {
         let bytes = std::fs::read(format!("{FIXTURES}click.wav")).unwrap();
@@ -521,6 +527,7 @@ pub(crate) mod tests {
         assert_eq!((len, rate, channels), (0, 0, 0));
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_round_trip() {
         let bytes = std::fs::read(format!("{FIXTURES}tone.wav")).unwrap();
@@ -538,6 +545,7 @@ pub(crate) mod tests {
         }
     }
 
+    #[cfg(feature = "wav")]
     #[test]
     fn waveform_errors_leave_out_untouched() {
         let bytes = std::fs::read(format!("{FIXTURES}click.wav")).unwrap();
