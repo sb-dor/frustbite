@@ -66,8 +66,9 @@ cache entry and reinstall. To check by hand, hash the file with `sha256sum`
 ### Binary portability
 
 - Linux binaries are built with `cargo zigbuild` against glibc 2.17 and link
-  libgcc statically, so they load on every distribution with glibc 2.17 or
-  newer.
+  libgcc statically, so they load on glibc-based distributions with glibc
+  2.17 or newer (CentOS 7 and newer). musl distributions such as Alpine are
+  not supported.
 - Android libraries are aligned to 16 KB pages.
 - Apple libraries have the install name `@rpath/libfrustbite.dylib`.
 - Windows libraries link the C runtime statically, so no Visual C++
@@ -80,7 +81,7 @@ CI checks every library with `tool/verify_native.sh` before a release.
 Set user defines in your application's `pubspec.yaml`. The hook resolves the
 library in this order:
 
-1. `library: <path>` uses that file as is. It must exist.
+1. `library: <path>` uses that file as is. It must exist. The file is unchecked: it gets no checksum and no build-time ABI check (only the runtime ABI check at the first call), `formats` cannot be combined with it, and a relative path resolves against the directory of the `pubspec.yaml` that sets the define, not the working directory.
 2. `source` is one of:
    - `auto` (default): the bundled library if there is one, else
      `cargo build` if the Rust crate and cargo are present, else a

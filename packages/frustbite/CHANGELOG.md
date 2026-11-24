@@ -2,6 +2,14 @@
 
 Distribution: the native libraries now ship inside the package.
 
+**Breaking for git-dependency users of 0.0.1.** A git dependency has no
+`prebuilt/` directory (the libraries are staged into the published package
+only), and the old download of release assets is gone. A git dependency now
+needs Rust (the hook builds `../../native/` with cargo); otherwise depend on the
+package published on pub.dev. The crate no longer carries a local
+`aarch64-linux-gnu-gcc` linker setting in `native/.cargo/config.toml`, so a git
+dependency on an arm64 Linux host uses the host's own linker.
+
 - The 12 prebuilt libraries are bundled under `prebuilt/` in the pub archive,
   with a `checksums.json` the build hook verifies (SHA-256). Nothing is
   downloaded at build time; the hook works offline and in locked-down CI.
@@ -15,6 +23,10 @@ Distribution: the native libraries now ship inside the package.
   `rust/` and the hook falls back to `cargo build --locked` when no bundled
   library fits, or when `source: build` is set. Cargo is found in
   `~/.cargo/bin` even when it is not on `PATH`.
+- `library: <path>` is unchecked (no checksum, no build-time ABI check; the
+  runtime ABI check still runs at the first call), a relative path resolves
+  against the pubspec that sets it, and combining it with `formats` is an
+  error.
 - Linux libraries are built with `cargo zigbuild` against glibc 2.17 (was: the
   CI runner's glibc 2.35), so they load on older distributions.
 - `build.rs` sets the link flags: 16 KB page alignment on Android, a

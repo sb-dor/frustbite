@@ -49,7 +49,11 @@ run = "tool/verify_native.sh"
 [tasks.stage]
 description = "Stage the package outside the repo (needs the 12 libraries, e.g. from CI) into ../frustbite-stage"
 dir = "packages/frustbite"
-run = "dart tool/stage_package.dart --from-dir ../../build/native --out ../../../frustbite-stage"
+run = [
+  # The stager refuses a non-empty output dir, so a second run needs it gone.
+  "rm -rf ../../../frustbite-stage",
+  "dart tool/stage_package.dart --from-dir ../../build/native --out ../../../frustbite-stage",
+]
 
 [tasks."publish:check"]
 description = "Check the staged .pubignore and dry-run the publish"

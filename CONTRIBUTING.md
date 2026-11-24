@@ -56,6 +56,18 @@ npm ci && npm run docs:build && npm run docs:check
 
 CI runs the same checks on every pull request.
 
+## Local cross builds
+
+`scripts/build.sh [output-dir] [target...]` builds the libraries this host can
+build, through `packages/frustbite/tool/build.dart`. CI cross-builds the Linux
+targets with `cargo zigbuild` (glibc 2.17; `--zigbuild` or
+`FRUSTBITE_ZIGBUILD=1`, needs `ziglang` and `cargo-zigbuild`). Without it, an
+arm64 Linux library on an x86_64 Linux host needs `aarch64-linux-gnu-gcc`
+(`apt install gcc-aarch64-linux-gnu`); `tool/build.dart` points cargo at it
+through `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER`. The crate's
+`.cargo/config.toml` holds no linker setting, so a git dependency or plain
+`cargo build` in `native/` uses the host's linker.
+
 ## Rules
 
 - **Generated files are never edited by hand**: `bindings.dart`, `enums.dart`,
@@ -96,6 +108,12 @@ dart tool/stage_package.dart --from-release frustbite-vX.Y.Z --out ../../../frus
 dart tool/check_pubignore.dart ../../../frustbite-stage
 cd ../../../frustbite-stage && dart pub publish
 ```
+
+Only CI-built artifacts are staged for publishing. The release workflow builds
+with `tool/build.dart --release-paths`, which remaps the home, rustup, cargo
+and checkout directories (`--remap-path-prefix`), so the binaries hold no
+build machine paths; a library built on your own machine does not, and must
+not go into a published package.
 
 The same staging and dry run run on every pull request and manual run of the
 workflow, from that run's own build artifacts. The published package bundles

@@ -34,7 +34,8 @@ in all) in its `prebuilt/` directory, and the build hook picks the one for your
 target. The build is offline and hermetic: nothing is downloaded, no Rust
 toolchain is needed, and the hook verifies each library against the SHA-256 in
 `prebuilt/checksums.json` before it is used. Supported platforms: Android, iOS,
-Linux (glibc 2.17 or newer), macOS, Windows and the web.
+Linux (glibc-based distributions with glibc ≥ 2.17; not musl), macOS, Windows
+and the web.
 
 ## Platform requirements
 
@@ -45,7 +46,7 @@ The prebuilt binaries target these minimum OS versions:
 | iOS | 16.0 |
 | macOS | 13.0 |
 | Android | API 30 (Android 11) |
-| Linux | glibc 2.17 (CentOS 7 and every newer distribution) |
+| Linux | glibc-based distributions with glibc ≥ 2.17 (CentOS 7 and newer); musl distributions such as Alpine are not supported |
 
 A Flutter app has to raise its own minimums to match, or the build fails or the
 app does not load the library:
@@ -71,7 +72,8 @@ timestamp, but Apple matches on the API, not on how it is used. No other
 required-reason API is imported: not `getattrlist`, `mach_absolute_time` or the
 disk space calls (`statfs`, `statvfs`). A pure Dart package cannot ship a
 `PrivacyInfo.xcprivacy` of its own, so the app declares the reason in its
-`ios/Runner/PrivacyInfo.xcprivacy`:
+`ios/Runner/PrivacyInfo.xcprivacy`. Put this fragment inside the top-level
+`<dict>` of that file:
 
 ```xml
 <key>NSPrivacyAccessedAPITypes</key>
@@ -195,7 +197,7 @@ that JSON. Every target ships one file name (`libfrustbite.so`,
 Set user defines in your application's `pubspec.yaml`. The hook resolves the
 library in this order:
 
-1. `library: <path>` uses that file as is. It must exist.
+1. `library: <path>` uses that file as is. It must exist. The file is unchecked: it gets no checksum and no build-time ABI check (only the runtime ABI check at the first call), `formats` cannot be combined with it, and a relative path resolves against the directory of the `pubspec.yaml` that sets the define, not the working directory.
 2. `source` picks where the library comes from:
    - `auto` (default): the bundled library if there is one, else `cargo build`
      if the Rust crate and cargo are present, else a `StateError` that lists
@@ -240,7 +242,8 @@ the first build.
 ## Prebuilt binaries
 
 - Linux: built with `cargo zigbuild` against glibc 2.17, with libgcc linked
-  statically; CI fails a build that needs a newer glibc.
+  statically; CI fails a build that needs a newer glibc. musl distributions
+  such as Alpine are not supported.
 - Android: 16 KB page-aligned; Apple: `@rpath/libfrustbite.dylib` install
   name; Windows: static C runtime.
 - Every library passes `tool/verify_native.sh` in CI before a release.
