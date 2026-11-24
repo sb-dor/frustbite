@@ -41,7 +41,7 @@ cargo clippy --target wasm32-unknown-unknown -- -D warnings
 ## Rules
 
 - Never edit generated files: `packages/frustbite/lib/src/bindings/bindings.dart`, `packages/frustbite/lib/src/enums.dart`, `native/include/frustbite.h`. Change the Rust source or `tool/generate_bindings.dart` and regenerate.
-- ABI bump: `frustbite_abi_version` in `native/src/ffi.rs` and `frustbiteAbiVersion` in `packages/frustbite/lib/src/abi.dart` must change together. Bump for any incompatible signature, layout or ID change.
+- ABI bump: `FRUSTBITE_ABI_VERSION` in `native/src/ffi.rs` and `frustbiteAbiVersion` in `packages/frustbite/lib/src/abi.dart` must change together. Bump for any incompatible signature, layout or ID change.
 - Error code 7 is reserved for `EncodingError` (stage 3).
 - Pure Rust dependencies only; each must build for `wasm32-unknown-unknown`. Licenses: MIT, Apache-2.0, BSD, Zlib or MPL-2.0.
 - Codec Cargo features (`mp3`, `aac`, `alac`, `flac`, `vorbis`, `opus`, `wav`) stay in sync with `supportedFormats` in `lib/src/hook/local_build.dart`.

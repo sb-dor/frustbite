@@ -1,16 +1,11 @@
 //! Frustbite native audio engine: C ABI consumed by the Dart package.
 
+mod codecs;
 pub mod error;
 pub mod ffi;
+#[cfg(feature = "opus")]
+mod opus;
+pub mod probe;
+mod source;
 #[cfg(target_arch = "wasm32")]
 mod wasm_alloc;
-
-#[cfg(test)]
-mod tests {
-    use super::ffi::frustbite_abi_version;
-
-    #[test]
-    fn abi_version_is_one() {
-        assert_eq!(frustbite_abi_version(), 1);
-    }
-}

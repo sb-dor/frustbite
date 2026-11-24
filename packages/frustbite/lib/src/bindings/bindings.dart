@@ -11,6 +11,136 @@ library;
 
 import 'dart:ffi' as ffi;
 
-/// ABI contract version. Increment for incompatible signatures, layouts, or IDs.
+/// Returns `FRUSTBITE_ABI_VERSION`, so the Dart side can refuse a mismatched library.
 @ffi.Native<ffi.Uint32 Function()>(isLeaf: true)
 external int frustbite_abi_version();
+
+/// Releases a handle. Passing null is a no-op.
+///
+/// # Safety
+/// `audio` must be null or a handle from `frustbite_open_*` that has not been freed yet.
+@ffi.Native<ffi.Void Function(ffi.Pointer<FrustbiteAudio>)>()
+external void frustbite_free(ffi.Pointer<FrustbiteAudio> audio);
+
+/// Describes the audio. The result is cached after the first call.
+///
+/// # Safety
+/// `audio` must be a live handle; `out` must be valid for a `FrustbiteAudioInfo` write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<FrustbiteAudio>,
+    ffi.Pointer<FrustbiteAudioInfo>,
+  )
+>()
+external int frustbite_get_info(
+  ffi.Pointer<FrustbiteAudio> audio,
+  ffi.Pointer<FrustbiteAudioInfo> out,
+);
+
+/// Opens audio from a file. `utf8_path` is a NUL-terminated UTF-8 path. Not available on wasm.
+///
+/// # Safety
+/// `utf8_path` must be a valid NUL-terminated string; `out` must be valid for a pointer write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<ffi.Char>,
+    ffi.Uint32,
+    ffi.Pointer<ffi.Pointer<FrustbiteAudio>>,
+  )
+>()
+external int frustbite_open_file(
+  ffi.Pointer<ffi.Char> utf8_path,
+  int format,
+  ffi.Pointer<ffi.Pointer<FrustbiteAudio>> out,
+);
+
+/// Opens audio from memory. The bytes are copied. `format` is a `FrustbiteContainer` value or
+/// `FRUSTBITE_FORMAT_DETECT`. On success `*out` receives a handle to release with
+/// `frustbite_free`.
+///
+/// # Safety
+/// `data` must point to `len` readable bytes (it may be null only when `len` is 0, which is
+/// rejected as an invalid pointer anyway); `out` must be valid for a pointer write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<ffi.Uint8>,
+    ffi.Size,
+    ffi.Uint32,
+    ffi.Pointer<ffi.Pointer<FrustbiteAudio>>,
+  )
+>()
+external int frustbite_open_memory(
+  ffi.Pointer<ffi.Uint8> data,
+  int len,
+  int format,
+  ffi.Pointer<ffi.Pointer<FrustbiteAudio>> out,
+);
+
+/// Size in bytes of the data behind the handle, for memory accounting. Returns 0 for null.
+///
+/// # Safety
+/// `audio` must be null or a live handle.
+@ffi.Native<ffi.Size Function(ffi.Pointer<FrustbiteAudio>)>(isLeaf: true)
+external int frustbite_source_byte_length(ffi.Pointer<FrustbiteAudio> audio);
+
+const int FRUSTBITE_ABI_VERSION = 1;
+
+const int FRUSTBITE_FORMAT_DETECT = 4294967295;
+
+/// An opened audio source. Immutable, so it can be shared between threads.
+final class FrustbiteAudio extends ffi.Opaque {}
+
+/// Description of an opened audio source.
+final class FrustbiteAudioInfo extends ffi.Struct {
+  /// A `FrustbiteContainer` value.
+  @ffi.Uint32()
+  external int container;
+
+  /// A `FrustbiteCodec` value.
+  @ffi.Uint32()
+  external int codec;
+
+  /// Sample rate in Hz (Opus is always 48000).
+  @ffi.Uint32()
+  external int sample_rate;
+
+  /// Channel count.
+  @ffi.Uint32()
+  external int channels;
+
+  /// Bits per sample for PCM, FLAC and ALAC; 0 when not applicable.
+  @ffi.Uint32()
+  external int bits_per_sample;
+
+  /// Average bitrate in bits per second; 0 when unknown.
+  @ffi.Uint32()
+  external int bitrate;
+
+  /// Playable frames per channel, after encoder delay and padding.
+  @ffi.Uint64()
+  external int total_frames;
+
+  /// Duration in microseconds.
+  @ffi.Uint64()
+  external int duration_us;
+
+  static ffi.Pointer<FrustbiteAudioInfo> $allocate(
+    ffi.Allocator $allocator, {
+    required int container,
+    required int codec,
+    required int sample_rate,
+    required int channels,
+    required int bits_per_sample,
+    required int bitrate,
+    required int total_frames,
+    required int duration_us,
+  }) => $allocator<FrustbiteAudioInfo>()
+    ..ref.container = container
+    ..ref.codec = codec
+    ..ref.sample_rate = sample_rate
+    ..ref.channels = channels
+    ..ref.bits_per_sample = bits_per_sample
+    ..ref.bitrate = bitrate
+    ..ref.total_frames = total_frames
+    ..ref.duration_us = duration_us;
+}

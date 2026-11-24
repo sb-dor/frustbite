@@ -1,6 +1,6 @@
 [package]
 name = "frustbite"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
 license = "MIT"
 
@@ -9,17 +9,20 @@ name = "frustbite"
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
+# Pure-Rust demuxers and decoders. Codecs and containers are enabled per Cargo feature below.
+symphonia = { version = "0.6.1", default-features = false, features = ["id3v1", "id3v2"] }
+opus-pure = { version = "=0.2.5", optional = true, default-features = false }
 
 # Keep in sync with `supportedFormats` in packages/frustbite/lib/src/hook/local_build.dart.
 [features]
 default = ["mp3", "aac", "alac", "flac", "vorbis", "opus", "wav"]
-mp3 = []
-aac = []
-alac = []
-flac = []
-vorbis = []
-opus = []
-wav = []
+mp3 = ["symphonia/mp3"]
+aac = ["symphonia/aac", "symphonia/isomp4"]
+alac = ["symphonia/alac", "symphonia/isomp4"]
+flac = ["symphonia/flac"]
+vorbis = ["symphonia/vorbis", "symphonia/ogg"]
+opus = ["dep:opus-pure", "symphonia/ogg", "symphonia/mkv"]
+wav = ["symphonia/wav", "symphonia/pcm"]
 
 [profile.release]
 opt-level = 3

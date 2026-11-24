@@ -2,11 +2,12 @@ language = "C"
 include_guard = "FRUSTBITE_H"
 style = "both"
 cpp_compat = true
+usize_is_size_t = true
 
 [export]
 exclude = ["frustbite_alloc", "frustbite_dealloc"]
-# Not reachable from any function signature, but needed by the Dart side.
-include = ["FrustbiteErrorCode"]
+# Needed by the Dart side but not reachable from any function signature.
+include = ["FrustbiteErrorCode", "FrustbiteContainer", "FrustbiteCodec", "FrustbiteAudioInfo"]
 
 [parse]
 parse_deps = false

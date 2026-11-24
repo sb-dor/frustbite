@@ -4,10 +4,14 @@ import 'package:ffigen/ffigen.dart';
 
 /// Enums shared with the web implementation: hidden from the generated
 /// bindings and redefined in `lib/src/enums.dart`.
-const _sharedEnums = {'FrustbiteErrorCode'};
+const _sharedEnums = {
+  'FrustbiteErrorCode',
+  'FrustbiteContainer',
+  'FrustbiteCodec',
+};
 
 /// Functions that never call back into Dart and can run as leaf calls.
-const _leafSymbols = {'frustbite_abi_version'};
+const _leafSymbols = {'frustbite_abi_version', 'frustbite_source_byte_length'};
 
 Future<void> main() async {
   final packageDir = File.fromUri(Platform.script).absolute.parent.parent.uri;
@@ -90,6 +94,18 @@ void _generateSharedEnums(File headerFile, File output) {
 
 $declarations
 ''');
+  final format = Process.runSync(Platform.resolvedExecutable, [
+    'format',
+    output.path,
+  ]);
+  if (format.exitCode != 0) {
+    throw ProcessException(
+      'dart',
+      ['format', output.path],
+      '${format.stdout}${format.stderr}',
+      format.exitCode,
+    );
+  }
 }
 
 String _dartEnum(String header, String name) {
@@ -102,6 +118,10 @@ String _dartEnum(String header, String name) {
   final members = RegExp(
     r'(?:/\*\*\s*((?:.|\n)*?)\s*\*/\s*)?(\w+) = (\d+),',
   ).allMatches(body);
+  final hasUnknown = RegExp(r'\bUnknown = ').hasMatch(body);
+  final orElse = hasUnknown
+      ? '() => $name.unknown'
+      : "() => throw ArgumentError.value(value, 'value', 'Unknown $name')";
   final buffer = StringBuffer('enum $name {\n');
   final entries = <String>[];
   for (final member in members) {
@@ -110,7 +130,8 @@ String _dartEnum(String header, String name) {
         .map((line) => line.replaceFirst(RegExp(r'^\s*\*?\s*'), ''))
         .join(' ')
         .trim();
-    final identifier = member[2]!;
+    // cbindgen prefixes variants of some enums (`FrustbiteCodec_Mp3`).
+    final identifier = member[2]!.replaceFirst('${name}_', '');
     final lowerCamel = identifier[0].toLowerCase() + identifier.substring(1);
     entries.add(
       '${doc == null || doc.isEmpty ? '' : '  /// $doc\n'}  $lowerCamel(${member[3]})',
@@ -121,7 +142,7 @@ String _dartEnum(String header, String name) {
     ..write(';\n\n  const $name(this.value);\n\n  final int value;\n')
     ..write('\n  static $name fromValue(int value) =>\n')
     ..write(
-      '      values.firstWhere((e) => e.value == value, orElse: () => $name.unknown);\n',
+      '      values.firstWhere((e) => e.value == value, orElse: $orElse);\n',
     )
     ..write('}');
   return buffer.toString();
