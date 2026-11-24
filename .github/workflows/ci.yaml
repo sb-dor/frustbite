@@ -1,0 +1,145 @@
+# Lightweight checks on every push to main and every pull request. Release
+# builds and the prebuilt asset matrix live in build_release.yaml (no caches).
+# The job names are the required status checks for branch protection; keep
+# them stable.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: rust
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Keep the version in sync with native/rust-toolchain.toml. The extra
+      # `rustup toolchain install` adds the pinned targets and components.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.100.0
+          components: clippy, rustfmt
+      - run: rustup toolchain install
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-ci-${{ hashFiles('native/Cargo.lock') }}
+          restore-keys: cargo-registry-ci-
+      - run: cargo fmt --check
+      # THIRD_PARTY_LICENSES.md (root and package copy) must match Cargo.lock.
+      - run: python3 -I tool/third_party_licenses.py --check
+      - run: cargo clippy --all-targets -- -D warnings
+      # A reduced format set must still compile without warnings.
+      - run: cargo clippy --all-targets --no-default-features --features wav -- -D warnings
+      - run: cargo test
+      # The release profile unwinds (a test checks catch_unwind), so test it too.
+      - run: cargo test --release
+      - run: cargo test --no-default-features --features wav
+
+  dart:
+    name: dart (${{ matrix.os }}-latest)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos, windows]
+    runs-on: ${{ matrix.os }}-latest
+    defaults:
+      run:
+        working-directory: packages/frustbite/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: stable
+      # The workspace's `local_build: true` makes the build hook compile the
+      # crate from source, so Rust is required on every runner.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.100.0
+          components: clippy, rustfmt
+      - run: rustup toolchain install
+        working-directory: native/
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart test
+
+  wasm:
+    name: wasm
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/frustbite/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.100.0
+      - run: rustup toolchain install
+        working-directory: native/
+      - run: dart pub get
+      - run: dart tool/build_wasm.dart test/frustbite.wasm
+      # Only the wasm test runs in the browser; the other tests use dart:io.
+      - run: dart test -p chrome test/frustbite_wasm_test.dart
+      - run: dart test -p chrome --compiler dart2wasm test/frustbite_wasm_test.dart
+
+  showcase:
+    name: showcase
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/showcase/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          channel: stable
+          cache: true
+      # The showcase's build hook compiles the crate from source.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.100.0
+          components: clippy, rustfmt
+      - run: rustup toolchain install
+        working-directory: native/
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+      - run: npm ci
+      - run: npm run docs:build
+      - run: npm run docs:check
