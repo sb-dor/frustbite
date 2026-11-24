@@ -13,9 +13,9 @@ updates:
       # native/src/probe.rs. Bump by hand and re-check that workaround.
       - dependency-name: symphonia
       - dependency-name: symphonia-core
-      # Pinned `=0.2.5`, see RESEARCH.md. Major bumps are manual.
+      # Pinned `=0.2.5` on purpose: native/RESEARCH.md defines the fallback
+      # triggers, and 0.2.x churns. Bump by hand.
       - dependency-name: opus-pure
-        update-types: ["version-update:semver-major"]
     groups:
       cargo-minor-patch:
         update-types: [minor, patch]
