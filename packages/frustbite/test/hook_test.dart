@@ -279,7 +279,8 @@ void main() {
     test('reuses an existing file whose hash matches', () async {
       final existing = File('${dir.path}/$fileName')..writeAsBytesSync(payload);
       final file = await download();
-      expect(file.path, existing.path);
+      // Compare file identity, not path strings: Windows mixes `\` and `/`.
+      expect(FileSystemEntity.identicalSync(file.path, existing.path), isTrue);
       expect(requests, 0);
     });
 
