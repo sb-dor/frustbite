@@ -193,7 +193,7 @@ Directory? findCrateDir(Uri packageRoot) {
 
 /// The `name` of the `[package]` table in a Cargo.toml text, or `null`.
 String? cargoPackageName(String manifest) {
-  final name = RegExp(r'^name\s*=\s*"([^"]*)"');
+  final name = RegExp(r'''^name\s*=\s*(["'])(.*?)\1''');
   var inPackage = false;
   for (final raw in const LineSplitter().convert(manifest)) {
     final line = raw.trim();
@@ -201,7 +201,7 @@ String? cargoPackageName(String manifest) {
       inPackage = line.startsWith('[package]');
     } else if (inPackage) {
       final match = name.firstMatch(line);
-      if (match != null) return match.group(1);
+      if (match != null) return match.group(2);
     }
   }
   return null;

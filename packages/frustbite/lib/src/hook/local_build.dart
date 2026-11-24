@@ -11,6 +11,7 @@
 // hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
 // https://github.com/hawkkiller/pixer
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
@@ -56,6 +57,9 @@ List<String>? readFormats(HookInput input) {
   }
   return formats.toList()..sort();
 }
+
+/// Upper bound for the best-effort `rustup toolchain install`.
+const _rustupTimeout = Duration(minutes: 5);
 
 /// The cargo arguments that select [formats]; none for the default (all)
 /// codecs.
@@ -153,11 +157,22 @@ Future<Uri> cargoBuild(
   );
   if (rustup != null) {
     try {
-      await Process.run(
+      final process = await Process.start(
         rustup,
         ['toolchain', 'install'],
         workingDirectory: workingDirectory,
         environment: environment,
+      );
+      // Drain the output so the process cannot block on a full pipe.
+      unawaited(process.stdout.drain<void>());
+      unawaited(process.stderr.drain<void>());
+      // A stalled network must not hang the hook forever.
+      await process.exitCode.timeout(
+        _rustupTimeout,
+        onTimeout: () {
+          process.kill();
+          return -1;
+        },
       );
     } on ProcessException {
       // Continue to cargo.
