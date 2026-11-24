@@ -1,0 +1,224 @@
+# Tests frustbite and builds/releases its prebuilt native assets.
+name: frustbite_prebuild_assets
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/build_release.yaml
+      - native/**
+      - packages/frustbite/**
+      - pubspec.yaml
+  push:
+    tags:
+      - "frustbite-assets-v*"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Fails a release tag in seconds instead of after the full build matrix.
+  preflight:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/frustbite/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check release versions
+        if: startsWith(github.ref, 'refs/tags/frustbite-assets-v')
+        run: |
+          version=$(sed -n 's/^version: //p' pubspec.yaml)
+          fail() { echo "::error::$1"; exit 1; }
+          [ "$GITHUB_REF_NAME" = "frustbite-assets-v$version" ] \
+            || fail "Tag $GITHUB_REF_NAME does not match pubspec version $version"
+          grep -qx "const version = '$GITHUB_REF_NAME';" lib/src/hook/version.dart \
+            || fail "lib/src/hook/version.dart does not point at $GITHUB_REF_NAME"
+          grep -qx "## $version" CHANGELOG.md \
+            || fail "CHANGELOG.md has no '## $version' section"
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || fail "Release tags must point at a commit on main"
+
+  rust:
+    needs: preflight
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: native/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Keep the version in sync with native/rust-toolchain.toml. The extra
+      # `rustup toolchain install` adds the pinned targets and components.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.100.0
+          components: clippy, rustfmt
+      - run: rustup toolchain install
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ hashFiles('native/Cargo.lock') }}
+          restore-keys: cargo-registry-
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      # A reduced format set must still compile without warnings.
+      - run: cargo clippy --all-targets --no-default-features --features wav -- -D warnings
+      - run: cargo test
+      # The release profile unwinds (a test checks catch_unwind), so test it too.
+      - run: cargo test --release
+      - run: cargo test --no-default-features --features wav
+
+  dart:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu, macos, windows]
+    runs-on: ${{ matrix.os }}-latest
+    defaults:
+      run:
+        working-directory: packages/frustbite/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: stable
+      # The workspace's `local_build: true` makes the build hook compile the
+      # crate from source, so Rust is required on every runner.
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.100.0
+          components: clippy, rustfmt
+      - run: rustup toolchain install
+        working-directory: native/
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart test
+
+  wasm:
+    needs: preflight
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/frustbite/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.100.0
+      - run: rustup toolchain install
+        working-directory: native/
+      - run: dart pub get
+      - run: dart tool/build_wasm.dart test/frustbite.wasm
+      # Only the wasm test runs in the browser; the other tests use dart:io.
+      - run: dart test -p chrome test/frustbite_wasm_test.dart
+      - run: dart test -p chrome --compiler dart2wasm test/frustbite_wasm_test.dart
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: wasm
+          path: packages/frustbite/test/frustbite.wasm
+          if-no-files-found: error
+
+  # Release binaries are built from a clean cargo target dir on purpose: cargo
+  # does not fingerprint MACOSX_DEPLOYMENT_TARGET / IPHONEOS_DEPLOYMENT_TARGET,
+  # so a cached native/target could ship binaries with the wrong minimum OS.
+  # Do not add a cache for native/target here.
+  build:
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: android_armv7, runner: ubuntu-latest }
+          - { target: android_arm64, runner: ubuntu-latest }
+          - { target: android_x86_64, runner: ubuntu-latest }
+          - { target: linux_aarch64, runner: ubuntu-latest }
+          - { target: linux_x86_64, runner: ubuntu-latest }
+          - { target: ios_arm64, runner: macos-latest }
+          - { target: ios_sim_arm64, runner: macos-latest }
+          - { target: ios_sim_x86_64, runner: macos-latest }
+          - { target: macos_arm64, runner: macos-latest }
+          - { target: macos_x86_64, runner: macos-latest }
+          - { target: windows_arm64, runner: windows-latest }
+          - { target: windows_x86_64, runner: windows-latest }
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: packages/frustbite/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: 1.100.0
+      - run: rustup toolchain install
+        working-directory: native/
+
+      # The linker is configured in native/.cargo/config.toml.
+      - name: Install the Linux arm64 cross toolchain
+        if: matrix.target == 'linux_aarch64'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      # Uses the NDK preinstalled on GitHub's ubuntu runners; tool/build.dart
+      # reads ANDROID_NDK_ROOT.
+      - name: Select the Android NDK
+        if: startsWith(matrix.target, 'android_')
+        run: echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - run: dart pub get
+      - run: dart tool/build.dart libs ${{ matrix.target }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: asset-${{ matrix.target }}
+          path: packages/frustbite/libs/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/frustbite-assets-v')
+    needs: [rust, dart, build, wasm]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: asset-*
+          merge-multiple: true
+          path: assets/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: wasm
+          path: assets/
+      - name: Check the asset list
+        run: |
+          ls -l assets/
+          [ "$(find assets -type f | wc -l)" -eq 13 ] \
+            || { echo "::error::Expected 12 dylibs and frustbite.wasm"; exit 1; }
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag
