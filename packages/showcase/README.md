@@ -27,3 +27,8 @@ The app calls `Frustbite.initialize()` at start-up, which loads `frustbite.wasm`
 
 The sandbox entitlements include `com.apple.security.files.user-selected.read-only`
 so that "Open file" can read the picked file.
+
+## Samples
+
+`assets/demo.mp3` is synthesised by `tool/generate_demo.sh` (needs ffmpeg) and is
+released under CC0. `tone.*` are the library's test fixtures.

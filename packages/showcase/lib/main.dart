@@ -14,7 +14,7 @@ Future<void> main() async {
   runApp(const ShowcaseApp());
 }
 
-const _samples = ['tone.mp3', 'tone.opus', 'tone.m4a'];
+const _samples = ['demo.mp3', 'tone.mp3', 'tone.opus', 'tone.m4a'];
 const _maxContentWidth = 720.0;
 
 class ShowcaseApp extends StatelessWidget {
@@ -59,18 +59,18 @@ class _ShowcasePageState extends State<ShowcasePage> {
     super.dispose();
   }
 
-  Future<void> _openFile() async {
+  Future<void> _openFile() => _load(() async {
     final file = await FilePicker.pickFile(type: FileType.audio);
-    if (file == null) return;
-    await _load(file.name, await file.readAsBytes());
-  }
+    return file == null ? null : (file.name, await file.readAsBytes());
+  });
 
-  Future<void> _openSample(String name) async {
+  Future<void> _openSample(String name) => _load(() async {
     final data = await rootBundle.load('assets/$name');
-    await _load(name, data.buffer.asUint8List());
-  }
+    return (name, data.buffer.asUint8List());
+  });
 
-  Future<void> _load(String name, Uint8List bytes) async {
+  /// Reads a source (null when cancelled), decodes it and shows the result.
+  Future<void> _load(Future<(String, Uint8List)?> Function() read) async {
     final generation = ++_generation;
     setState(() {
       _loading = true;
@@ -80,7 +80,9 @@ class _ShowcasePageState extends State<ShowcasePage> {
     final width = math.min(MediaQuery.sizeOf(context).width - 32, _maxContentWidth);
     Frustbite? audio;
     try {
-      audio = Frustbite.fromMemory(bytes);
+      final source = await read();
+      if (source == null) return;
+      audio = Frustbite.fromMemory(source.$2);
       final waveform = await audio.waveformAsync(buckets: width.round());
       if (generation != _generation || !mounted) {
         // Superseded while decoding: nothing is in flight anymore, so this is safe.
@@ -88,19 +90,15 @@ class _ShowcasePageState extends State<ShowcasePage> {
         return;
       }
       final previous = _loaded;
-      setState(() {
-        _loaded = _Loaded(name, audio!, waveform);
-        _loading = false;
-      });
+      setState(() => _loaded = _Loaded(source.$1, audio!, waveform));
       previous?.audio.dispose();
-    } on FrustbiteException catch (e) {
+    } catch (e) {
       audio?.dispose();
       if (generation == _generation && mounted) {
-        setState(() {
-          _error = e.message;
-          _loading = false;
-        });
+        setState(() => _error = e is FrustbiteException ? e.message : '$e');
       }
+    } finally {
+      if (generation == _generation && mounted) setState(() => _loading = false);
     }
   }
 
@@ -281,17 +279,18 @@ class _WaveformPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final buckets = waveform.buckets;
-    if (buckets == 0) return;
-    final peak = waveform.data.reduce(math.max);
+    if (waveform.channels == 0 || waveform.buckets == 0) return;
+    final values = waveform.channel(0);
+    if (values.isEmpty) return;
+    final peak = values.reduce(math.max);
     final paint = Paint()
       ..color = color
-      ..strokeWidth = math.max(1, size.width / buckets)
+      ..strokeWidth = math.max(1, size.width / values.length)
       ..strokeCap = StrokeCap.round;
     final mid = size.height / 2;
-    for (var i = 0; i < buckets; i++) {
-      final x = (i + 0.5) * size.width / buckets;
-      final h = peak == 0 ? 0.0 : waveform.data[i] / peak * mid;
+    for (var i = 0; i < values.length; i++) {
+      final x = (i + 0.5) * size.width / values.length;
+      final h = peak == 0 ? 0.0 : values[i] / peak * mid;
       canvas.drawLine(Offset(x, mid - h), Offset(x, mid + math.max(h, 0.5)), paint);
     }
   }
