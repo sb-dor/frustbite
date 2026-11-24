@@ -20,6 +20,42 @@ external JSPromise<_InstantiatedSource> _instantiate(
 @JS('fetch')
 external JSPromise<_Response> _fetch(String url);
 
+@JS('Function')
+external JSFunction _jsFunction(String parameter, String body);
+
+/// Wraps every exported function in a JS frame that turns a trap into a fresh
+/// `Error`. V8 marks a trap's `RuntimeError` as uncatchable by wasm code, even
+/// when rethrown, so under dart2wasm (whose Dart frames are wasm) a raw trap
+/// would skip every Dart `catch` and `finally`.
+const _guardExports = r'''
+const guarded = {};
+for (const name of Object.keys(exports)) {
+  const value = exports[name];
+  guarded[name] = typeof value !== 'function' ? value : function (...args) {
+    try {
+      return value(...args);
+    } catch (e) {
+      const error = new Error(String(e));
+      error.cause = e;
+      throw error;
+    }
+  };
+}
+return guarded;
+''';
+
+/// The guarded exports, or the raw ones where a Content Security Policy
+/// without `unsafe-eval` forbids `Function`. Traps are then still caught under
+/// dart2js, but under dart2wasm they escape uncaught.
+JSObject _guard(JSObject exports) {
+  try {
+    return _jsFunction('exports', _guardExports).callAsFunction(null, exports)
+        as JSObject;
+  } catch (_) {
+    return exports;
+  }
+}
+
 extension type _Response._(JSObject _) implements JSObject {
   external bool get ok;
   external int get status;
@@ -36,6 +72,12 @@ extension type _Instance._(JSObject _) implements JSObject {
 
 extension type _Memory._(JSObject _) implements JSObject {
   external JSArrayBuffer get buffer;
+}
+
+extension on JSUint8Array {
+  /// `TypedArray.prototype.set`: one bulk copy, under dart2js and dart2wasm.
+  @JS('set')
+  external void setFrom(JSUint8Array source);
 }
 
 /// The exports of `frustbite.wasm`: the C ABI of `frustbite.h` plus the wasm32
@@ -109,16 +151,30 @@ const _infoAlign = 8;
 /// Size of a pointer or `size_t` on wasm32.
 const _word = 4;
 
+const _trappedMessage =
+    'frustbite wasm runtime trapped; reload the page or call '
+    'Frustbite.initialize again';
+
 /// One instantiated `frustbite.wasm`. Handles are wasm pointers (ints).
 ///
 /// Every call copies its input into wasm memory, reads the out-params from
 /// scratch slots, copies the results out and frees every allocation in a
-/// `finally`. The memory buffer is re-read after each call, since it detaches
-/// when wasm memory grows.
+/// `finally`. Copies are bulk (`TypedArray.set` in, `fromList` of a typed
+/// array view out). The memory buffer is re-read after each call, since it
+/// detaches when wasm memory grows.
+///
+/// A trap (a Rust panic on wasm32, or any JS error out of an export) is
+/// reported as [UnknownFrustbiteException] and poisons the instance: its
+/// state may be inconsistent, so every later call throws [StateError] and
+/// frees are skipped.
 final class WasmRuntime {
   WasmRuntime._(this._exports);
 
   final _Exports _exports;
+  bool _trapped = false;
+
+  /// Whether an export trapped; the instance is then unusable.
+  bool get isTrapped => _trapped;
 
   /// Fetches and instantiates the module, then checks its ABI version.
   ///
@@ -147,7 +203,7 @@ final class WasmRuntime {
     final _Exports exports;
     try {
       final source = await _instantiate(bytes, JSObject()).toDart;
-      exports = source.instance.exports;
+      exports = _Exports._(_guard(source.instance.exports));
     } catch (error) {
       throw StateError(
         'Failed to instantiate the Frustbite WebAssembly module: $error',
@@ -166,16 +222,22 @@ final class WasmRuntime {
     return WasmRuntime._(exports);
   }
 
-  int get abiVersion => _exports.abiVersion();
+  int get abiVersion =>
+      _call('operation: abiVersion', () => _exports.abiVersion());
 
   /// Opens [bytes]; returns the handle. [format] is a wire value.
   int openMemory(Uint8List bytes, int format) =>
       // One block: the out-handle slot, then the bytes.
       _withAlloc(_word + bytes.length, _word, (block) {
-        Uint8List.view(_buffer, block + _word, bytes.length).setAll(0, bytes);
+        JSUint8Array(_memory, block + _word, bytes.length).setFrom(bytes.toJS);
+        const context = 'input: memory';
         checkError(
-          _exports.openMemory(block + _word, bytes.length, format, block),
-          'input: memory',
+          _call(
+            context,
+            () =>
+                _exports.openMemory(block + _word, bytes.length, format, block),
+          ),
+          context,
         );
         final handle = _u32(block);
         if (handle == 0) {
@@ -187,14 +249,18 @@ final class WasmRuntime {
         return handle;
       });
 
-  void free(int handle) => _exports.free(handle);
+  /// Frees [handle]; skipped once the instance has trapped.
+  void free(int handle) => _release(() => _exports.free(handle));
 
-  int sourceByteLength(int handle) =>
-      _exports.sourceByteLength(handle).toUnsigned(32);
+  int sourceByteLength(int handle) => _call(
+    'operation: sourceByteLength',
+    () => _exports.sourceByteLength(handle),
+  ).toUnsigned(32);
 
   AudioInfo info(int handle) => _withAlloc(_infoSize, _infoAlign, (out) {
-    checkError(_exports.getInfo(handle, out), 'operation: info');
-    final data = ByteData.view(_buffer, out, _infoSize);
+    const context = 'operation: info';
+    checkError(_call(context, () => _exports.getInfo(handle, out)), context);
+    final data = ByteData.view(_memory.toDart, out, _infoSize);
     int u32(int offset) => data.getUint32(offset, Endian.little);
     // dart2js has no ByteData.getUint64; combine the two halves.
     int u64(int offset) => u32(offset) + u32(offset + 4) * 0x100000000;
@@ -213,9 +279,10 @@ final class WasmRuntime {
   });
 
   AudioTags tags(int handle) => _withAlloc(2 * _word, _word, (out) {
+    const context = 'operation: tags';
     checkError(
-      _exports.getTagsJson(handle, out, out + _word),
-      'operation: tags',
+      _call(context, () => _exports.getTagsJson(handle, out, out + _word)),
+      context,
     );
     final ptr = _u32(out);
     final len = _u32(out + _word);
@@ -230,15 +297,19 @@ final class WasmRuntime {
   });
 
   AudioCover? cover(int handle) => _withAlloc(4 * _word, _word, (out) {
+    const context = 'operation: cover';
     checkError(
-      _exports.getCover(
-        handle,
-        out,
-        out + _word,
-        out + 2 * _word,
-        out + 3 * _word,
+      _call(
+        context,
+        () => _exports.getCover(
+          handle,
+          out,
+          out + _word,
+          out + 2 * _word,
+          out + 3 * _word,
+        ),
       ),
-      'operation: cover',
+      context,
     );
     final ptr = _u32(out);
     final len = _u32(out + _word);
@@ -262,16 +333,20 @@ final class WasmRuntime {
     WaveformMode mode,
     bool perChannel,
   ) => _withAlloc(2 * _word, _word, (out) {
+    const context = 'operation: waveform';
     checkError(
-      _exports.waveform(
-        handle,
-        buckets,
-        mode.wireValue,
-        perChannel ? 1 : 0,
-        out,
-        out + _word,
+      _call(
+        context,
+        () => _exports.waveform(
+          handle,
+          buckets,
+          mode.wireValue,
+          perChannel ? 1 : 0,
+          out,
+          out + _word,
+        ),
       ),
-      'operation: waveform',
+      context,
     );
     final data = _takeFloats(_u32(out), _u32(out + _word));
     return Waveform(
@@ -282,15 +357,19 @@ final class WasmRuntime {
   });
 
   AudioPcm decode(int handle) => _withAlloc(4 * _word, _word, (out) {
+    const context = 'operation: decode';
     checkError(
-      _exports.decode(
-        handle,
-        out,
-        out + _word,
-        out + 2 * _word,
-        out + 3 * _word,
+      _call(
+        context,
+        () => _exports.decode(
+          handle,
+          out,
+          out + _word,
+          out + 2 * _word,
+          out + 3 * _word,
+        ),
       ),
-      'operation: decode',
+      context,
     );
     final sampleRate = _u32(out + 2 * _word);
     final channels = _u32(out + 3 * _word);
@@ -302,40 +381,65 @@ final class WasmRuntime {
   });
 
   /// The current memory buffer. Never cache it across wasm calls.
-  ByteBuffer get _buffer => _exports.memory.buffer.toDart;
+  JSArrayBuffer get _memory => _exports.memory.buffer;
 
   int _u32(int ptr) =>
-      ByteData.view(_buffer, ptr, 4).getUint32(0, Endian.little);
+      ByteData.view(_memory.toDart, ptr, 4).getUint32(0, Endian.little);
+
+  /// Calls an export. Anything it throws is a trap: the instance is poisoned
+  /// and the trap is reported as [UnknownFrustbiteException].
+  T _call<T>(String context, T Function() export) {
+    if (_trapped) throw StateError(_trappedMessage);
+    try {
+      return export();
+    } catch (error) {
+      _trapped = true;
+      throw UnknownFrustbiteException(
+        FrustbiteErrorCode.unknown,
+        '$context; the wasm module trapped: $error',
+      );
+    }
+  }
+
+  /// Calls a freeing export, unless the instance trapped: its allocator may
+  /// be inconsistent, and a pending trap error must not be replaced.
+  void _release(void Function() export) {
+    if (!_trapped) _call('operation: free', export);
+  }
 
   /// Runs [use] with [size] bytes of wasm memory, freed afterwards.
   T _withAlloc<T>(int size, int align, T Function(int ptr) use) {
-    final ptr = _exports.alloc(size, align).toUnsigned(32);
+    final ptr = _call(
+      'operation: alloc',
+      () => _exports.alloc(size, align),
+    ).toUnsigned(32);
     if (ptr == 0) {
       throw StateError('WebAssembly allocation of $size bytes failed');
     }
     try {
       return use(ptr);
     } finally {
-      _exports.dealloc(ptr, size, align);
+      _release(() => _exports.dealloc(ptr, size, align));
     }
   }
 
-  /// Copies a wasm byte buffer into Dart memory. Does not free it.
+  /// Copies a wasm byte buffer into Dart memory in one bulk copy. Does not
+  /// free it.
   Uint8List _copyBytes(int ptr, int len) => ptr == 0 || len == 0
       ? Uint8List(0)
-      : Uint8List.fromList(Uint8List.view(_buffer, ptr, len));
+      : Uint8List.fromList(JSUint8Array(_memory, ptr, len).toDart);
 
   void _freeBytes(int ptr, int len) {
-    if (ptr != 0) _exports.freeBytes(ptr, len);
+    if (ptr != 0) _release(() => _exports.freeBytes(ptr, len));
   }
 
-  /// Copies a wasm f32 buffer into Dart memory and frees it.
+  /// Copies a wasm f32 buffer into Dart memory in one bulk copy and frees it.
   Float32List _takeFloats(int ptr, int len) {
     if (ptr == 0) return Float32List(0);
     try {
-      return Float32List.fromList(Float32List.view(_buffer, ptr, len));
+      return Float32List.fromList(JSFloat32Array(_memory, ptr, len).toDart);
     } finally {
-      _exports.freeF32(ptr, len);
+      _release(() => _exports.freeF32(ptr, len));
     }
   }
 }

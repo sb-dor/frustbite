@@ -48,7 +48,10 @@ final class Frustbite {
   /// [StateError]. With no argument, `frustbite.wasm` is fetched relative to
   /// the page; pass [wasmUri] or [wasmBytes] (not both) to load it from
   /// elsewhere. Throws [StateError] if the module cannot be loaded or does not
-  /// match this package's ABI; a failed load can be retried.
+  /// match this package's ABI; a failed load can be retried. If the engine
+  /// traps (reported as [UnknownFrustbiteException]), every later call throws
+  /// [StateError] until this is called again, which loads a fresh instance;
+  /// objects opened before the trap stay unusable.
   static Future<void> initialize({Uri? wasmUri, Uint8List? wasmBytes}) =>
       BackendAudio.initialize(wasmUri: wasmUri, wasmBytes: wasmBytes);
 

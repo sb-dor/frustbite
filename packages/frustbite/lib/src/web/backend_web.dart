@@ -7,36 +7,46 @@ import '../audio_tags.dart';
 import '../waveform.dart';
 import 'wasm_runtime.dart';
 
-/// Owns a handle (a wasm pointer) in the initialized WASM instance. The
+/// Owns a handle (a wasm pointer) in the WASM instance that opened it. The
 /// public API guards access after disposal.
 final class BackendAudio {
-  BackendAudio._(this._handle) {
-    _finalizer.attach(this, _handle, detach: this);
+  BackendAudio._(this._wasm, this._handle) {
+    _finalizer.attach(this, (_wasm, _handle), detach: this);
   }
 
+  /// The instance that owns [_handle]. Kept per object: after a trap,
+  /// [initialize] loads a new instance, and old handles must never reach it.
+  final WasmRuntime _wasm;
   final int _handle;
 
   static WasmRuntime? _runtime;
   static Future<WasmRuntime>? _loading;
 
   // Web has no NativeFinalizer; this is a best-effort safety net only.
-  static final _finalizer = Finalizer<int>((handle) => _runtime?.free(handle));
+  static final _finalizer = Finalizer<(WasmRuntime, int)>(
+    (owner) => owner.$1.free(owner.$2),
+  );
 
-  static WasmRuntime get _wasm =>
+  static WasmRuntime get _current =>
       _runtime ??
       (throw StateError(
         'Call Frustbite.initialize() before using frustbite on the web',
       ));
 
-  static int get abiVersion => _wasm.abiVersion;
+  static int get abiVersion => _current.abiVersion;
 
   /// Loads and checks the module once. Concurrent calls share one load; a
-  /// failed load can be retried.
+  /// failed load can be retried, and a trapped instance is replaced.
   static Future<void> initialize({Uint8List? wasmBytes, Uri? wasmUri}) async {
     if (wasmBytes != null && wasmUri != null) {
       throw ArgumentError('Provide wasmUri or wasmBytes, not both');
     }
-    if (_runtime != null) return;
+    final current = _runtime;
+    if (current != null) {
+      if (!current.isTrapped) return;
+      _runtime = null;
+      _loading = null;
+    }
     final loading = _loading ??= WasmRuntime.load(
       wasmUri: wasmUri,
       wasmBytes: wasmBytes,
@@ -51,10 +61,14 @@ final class BackendAudio {
   /// Throws [UnsupportedError]: the web has no file system.
   static void ensureFilesSupported() => throw UnsupportedError(_noFiles);
 
-  factory BackendAudio.fromMemory(Uint8List bytes, AudioContainer? format) =>
-      BackendAudio._(
-        _wasm.openMemory(bytes, format?.wireValue ?? formatDetectWire),
-      );
+  factory BackendAudio.fromMemory(Uint8List bytes, AudioContainer? format) {
+    final wasm = _current;
+    final handle = wasm.openMemory(
+      bytes,
+      format?.wireValue ?? formatDetectWire,
+    );
+    return BackendAudio._(wasm, handle);
+  }
 
   factory BackendAudio.fromFile(String path, AudioContainer? format) =>
       throw UnsupportedError(_noFiles);
@@ -85,6 +99,7 @@ final class BackendAudio {
 
   Future<AudioPcm> decodeAsync() => Future(decode);
 
+  /// Frees the handle; a no-op on a trapped instance.
   void dispose() {
     _finalizer.detach(this);
     _wasm.free(_handle);
