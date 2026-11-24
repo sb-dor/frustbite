@@ -1,0 +1,69 @@
+version: 2
+
+# Dependabot's pub support for workspaces is not documented as complete, so the
+# workspace root and each package directory get their own `pub` entry. The
+# showcase is outside the workspace.
+updates:
+  - package-ecosystem: cargo
+    directory: /native
+    schedule:
+      interval: weekly
+    ignore:
+      # Pinned `=0.6.1` because of the MP3 trim workaround in
+      # native/src/probe.rs. Bump by hand and re-check that workaround.
+      - dependency-name: symphonia
+      - dependency-name: symphonia-core
+      # Pinned `=0.2.5`, see RESEARCH.md. Major bumps are manual.
+      - dependency-name: opus-pure
+        update-types: ["version-update:semver-major"]
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      pub-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /packages/frustbite
+    schedule:
+      interval: weekly
+    groups:
+      pub-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /packages/benchmark
+    schedule:
+      interval: weekly
+    groups:
+      pub-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /packages/showcase
+    schedule:
+      interval: weekly
+    groups:
+      pub-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /docs
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
