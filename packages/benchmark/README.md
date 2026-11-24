@@ -20,21 +20,21 @@ Median of 10 runs after 2 warm-up runs, in milliseconds (raw numbers in
 
 | Operation | frustbite | baseline | Speedup |
 | --- | --- | --- | --- |
-| info (mp3) | 1.18 ms | — (no baseline) | — |
-| decode mp3 | 95.9 ms | `audio_decode`: 83.7 ms | 0.87x |
-| decode mp3 | 95.9 ms | `glint_audio_pure`: 7814.1 ms | 81.47x |
-| decode Ogg Vorbis | 105.8 ms | `audio_decode`: 124.3 ms | 1.17x |
-| decode FLAC | 79.4 ms | — (no baseline supports FLAC) | — |
-| decode WAV | 24.8 ms | `wav`: 230.3 ms | 9.30x |
-| decode WAV | 24.8 ms | `audio_decode`: 28.1 ms | 1.14x |
-| waveform mp3, 1000 buckets | 92.9 ms | `audio_decode` decode + Dart bucket loop: 83.2 ms | 0.90x |
-| tags + cover (mp3) | 0.22 ms | `audio_metadata_reader`: 0.09 ms | 0.42x |
+| info (mp3) | 0.96 ms | — (no baseline) | — |
+| decode mp3 | 95.4 ms | `audio_decode`: 83.2 ms | 0.87x |
+| decode mp3 | 95.4 ms | `glint_audio_pure`: 7955.9 ms | 83.39x |
+| decode Ogg Vorbis | 106.7 ms | `audio_decode`: 124.7 ms | 1.17x |
+| decode FLAC | 78.3 ms | — (no baseline supports FLAC) | — |
+| decode WAV | 24.9 ms | `wav`: 225.6 ms | 9.05x |
+| decode WAV | 24.9 ms | `audio_decode`: 29.2 ms | 1.17x |
+| waveform mp3, 1000 buckets | 93.1 ms | `audio_decode` decode + Dart bucket loop: 88.7 ms | 0.95x |
+| tags + cover (mp3) | 0.10 ms | `audio_metadata_reader`: 0.09 ms | 0.94x |
 
 Reading the table honestly: against `audio_decode`, which is also native code,
 frustbite is roughly on par. It is slower on mp3 decode (0.87x) and waveform
-(0.90x), slightly faster on Vorbis and WAV. Against the pure-Dart decoders the
-gap is large (81x for mp3, 9x for WAV). On tags, `audio_metadata_reader` is
-faster (see the caveats below).
+(0.95x), faster on Vorbis (1.17x) and WAV (1.17x). Against the pure-Dart decoders the
+gap is large (83x for mp3, 9x for WAV). On tags, `audio_metadata_reader` is
+marginally faster (0.94x, within timer noise at this scale).
 
 ## Baselines
 
@@ -61,20 +61,31 @@ the last 18 months (`wav` last in July 2025). frustbite returns interleaved
   with `benchmark_harness`'s `BenchmarkBase` (`setup`/`run`/`teardown`) but
   timed by our own loop, because the harness's `measure()` returns a mean over
   a fixed 2 s window, which is a handful of samples for the slow cases.
-- Sources are preloaded into memory as bytes before timing.
+- Sources are preloaded into memory as bytes before timing, except `tags_mp3`
+  (see below), which reads the file.
 - frustbite: every measured run opens a fresh `Frustbite.fromMemory`,
   performs the operation and `dispose()`s it, so cached `info`/`tags` never make
   repeat runs free. Open/dispose cost is included.
+- Build: frustbite is a release native build compiled from source
+  (`local_build: true`, cargo release profile with fat LTO, opt-level 3). The
+  baselines use their own build hook or default settings (`audio_decode`
+  compiles its C through its own hook; the others are plain Dart).
 - `waveform`: frustbite `waveform(buckets: 1000)` (peak mode, merged channels)
-  against `audio_decode` mp3 decode followed by a Dart loop computing the same
-  algorithm (largest absolute sample per frame range, all channels, in [0, 1]).
-- `tags`: frustbite `tags` + `cover`.
+  against `audio_decode` mp3 decode followed by a Dart loop. Both compute
+  peak-per-bucket, but they are not literally the same algorithm: the baseline
+  computes exact per-bucket peaks over the raw samples, while frustbite
+  summarises 256-frame blocks and then maps those blocks onto buckets.
+- `tags`: frustbite `Frustbite.fromFile(path)` then `tags` + `cover`, opened
+  fresh per operation, against `audio_metadata_reader` reading the same file.
+  Both sides do file I/O.
+- Warm-up: the pure-Dart baselines get only 2 JIT warm-up runs, which may
+  understate their steady-state speed.
 
 Caveats that favour or disfavour either side:
 
-- `audio_metadata_reader` only accepts a `File`, so it reads from disk (warm OS
-  page cache) while frustbite reads from memory. Both extract the cover. At
-  sub-millisecond scale the comparison is sensitive to this and to timer noise.
+- `tags_mp3`: both sides read the same file from disk (warm OS page cache) and
+  extract the cover. At sub-millisecond scale the result is sensitive to timer
+  noise; treat 0.94x as a tie.
 - `info_mp3` has no baseline: no listed package exposes a comparable header
   scan (`audio_decode` has `audioInfo`, but the brief's table does not pair it
   with this case).

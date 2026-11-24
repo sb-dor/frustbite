@@ -17,6 +17,16 @@ T _once<T>(Uint8List source, T Function(Frustbite f) op) {
   }
 }
 
+/// Like [_once], but opens [path] from disk (file I/O on both sides).
+T _onceFile<T>(String path, T Function(Frustbite f) op) {
+  final f = Frustbite.fromFile(path);
+  try {
+    return op(f);
+  } finally {
+    f.dispose();
+  }
+}
+
 /// Every frustbite case, keyed by case name. Sources are preloaded bytes.
 Map<String, BenchmarkBase> frustbiteCases(Inputs inputs) {
   OpBenchmark bench(String key, Object? Function() op) =>
@@ -46,7 +56,7 @@ Map<String, BenchmarkBase> frustbiteCases(Inputs inputs) {
     ),
     'tags_mp3': bench(
       'tags_mp3',
-      () => _once(inputs.mp3, (f) => (f.tags, f.cover)),
+      () => _onceFile(inputs.mp3Path, (f) => (f.tags, f.cover)),
     ),
   };
 }
