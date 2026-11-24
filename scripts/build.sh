@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds every frustbite native library that can be built on this host, named
-# like the GitHub release assets, by calling packages/frustbite/tool/build.dart.
+# Builds every frustbite native library that can be built on this host into
+# <output-dir>/<target>/<one file name>, by calling packages/frustbite/tool/build.dart.
 #
 # Usage: scripts/build.sh [output-dir] [target...]
 #   output-dir  defaults to <repo>/build/assets

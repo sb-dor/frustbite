@@ -1,11 +1,17 @@
-[target.aarch64-linux-android]
-rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+# Linker flags for the cdylib live in build.rs: RUSTFLAGS from the environment
+# replace the rustflags below, but never build.rs output.
 
-[target.armv7-linux-androideabi]
-rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+# Windows: link the C runtime statically, so the DLL loads without the VC++
+# redistributable (clean servers, Nano Server). Adapted from PlugFox/ws (MIT).
+# This stays here because build.rs cannot set `-C target-feature`.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
 
-[target.x86_64-linux-android]
-rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
 
+# Only for local plain `cargo build --target aarch64-unknown-linux-gnu` (and
+# scripts/build.sh) on an x86_64 Linux host. CI and release builds use
+# `cargo zigbuild` (see packages/frustbite/tool/build.dart), which ignores it.
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"

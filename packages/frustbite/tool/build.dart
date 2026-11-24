@@ -1,26 +1,37 @@
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
-import 'package:frustbite/src/hook/download_asset.dart';
 import 'package:frustbite/src/hook/get_android_compiler_config.dart';
 import 'package:frustbite/src/hook/target_versions.dart';
 import 'package:frustbite/src/hook/targets.dart';
 
-/// Builds release dynamic libraries for the given targets and copies them,
-/// named like the GitHub release assets, into a directory.
+/// Builds release dynamic libraries for the given targets and copies each one
+/// to `<output-dir>/<target>/<one file name>`, where the file name is
+/// `libfrustbite.so`, `libfrustbite.dylib` or `frustbite.dll`.
 ///
 /// ```sh
-/// dart tool/build.dart <output-dir> <target>...   # e.g. linux_x86_64 macos_arm64
+/// dart tool/build.dart [--zigbuild] <output-dir> <target>...   # e.g. linux_x86_64 macos_arm64
 /// dart tool/build.dart <output-dir> all
 /// ```
 ///
 /// Each library is built with `cargo build --release --target <triple>`; the
 /// matching rustup target must be installed. Android targets need
 /// `ANDROID_NDK_ROOT` or `ANDROID_NDK_HOME`.
-Future<void> main(List<String> args) async {
+///
+/// Linux targets build with `cargo zigbuild --target <triple>.2.17` (glibc 2.17
+/// floor) when `--zigbuild` is given or `FRUSTBITE_ZIGBUILD=1` is set. That
+/// needs `pip install ziglang` and `cargo install cargo-zigbuild`. Without it
+/// Linux uses plain `cargo build` against the host's glibc (local use only).
+Future<void> main(List<String> rawArgs) async {
+  final useZigbuild =
+      rawArgs.contains('--zigbuild') ||
+      Platform.environment['FRUSTBITE_ZIGBUILD'] == '1';
+  final args = rawArgs.where((arg) => arg != '--zigbuild').toList();
   if (args.length < 2) {
     stderr
-      ..writeln('Usage: dart tool/build.dart <output-dir> <target>... | all')
+      ..writeln(
+        'Usage: dart tool/build.dart [--zigbuild] <output-dir> <target>... | all',
+      )
       ..writeln('Targets: ${_targets.keys.join(', ')}');
     exit(64);
   }
@@ -54,10 +65,15 @@ Future<void> main(List<String> args) async {
           linker;
     }
 
-    stdout.writeln('Building $name ($triple)');
+    // zigbuild takes the glibc version as a suffix of the target; the output
+    // stays in target/<triple>/.
+    final zigbuild = useZigbuild && os == OS.linux;
+    stdout.writeln('Building $name ($triple${zigbuild ? ', zigbuild' : ''})');
     final process = await Process.start(
       'cargo',
-      ['build', '--release', '--target', triple],
+      zigbuild
+          ? ['zigbuild', '--release', '--target', '$triple.$_linuxGlibc']
+          : ['build', '--release', '--target', triple],
       workingDirectory: nativeDir.path,
       environment: environment,
       mode: ProcessStartMode.inheritStdio,
@@ -71,8 +87,10 @@ Future<void> main(List<String> args) async {
         'target/$triple/release/${os.dylibFileName('frustbite')}',
       ),
     );
+    final targetDir = Directory.fromUri(outputDir.uri.resolve('$name/'));
+    await targetDir.create(recursive: true);
     final target = File.fromUri(
-      outputDir.uri.resolve(assetFileName(os, architecture, iOSSdk)),
+      targetDir.uri.resolve(os.dylibFileName('frustbite')),
     );
     if (!built.existsSync()) {
       stderr.writeln('Build succeeded but ${built.path} does not exist');
@@ -82,6 +100,9 @@ Future<void> main(List<String> args) async {
     stdout.writeln('  -> ${target.path}');
   }
 }
+
+/// The glibc floor of the Linux binaries (documented minimum).
+const _linuxGlibc = '2.17';
 
 final _targets = {
   for (final target in supportedTargets)
