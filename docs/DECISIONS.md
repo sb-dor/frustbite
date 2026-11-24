@@ -165,3 +165,25 @@ Dart and Rust sources come from the working tree, so the command also checks
 that the tag exists, that `HEAD` is the tag's commit, that the tree is clean,
 that the version matches `pubspec.yaml`, and that the downloaded libraries match
 the release's `checksums.json`. Status: adopted.
+
+### Deviation: the staged crate is trimmed for source builds
+
+The repository's `native/rust-toolchain.toml` lists clippy, rustfmt and 13
+targets, which a source build from pub.dev would install (hundreds of MB, and
+possibly past the hook's 5-minute rustup timeout). The stager writes
+`rust/rust-toolchain.toml` with the same `channel`, `profile = "minimal"` and
+no components or targets, and appends an empty `[workspace]` table to
+`rust/Cargo.toml` so cargo does not refuse a pub cache under someone's
+workspace. The hook then runs `rustup toolchain install --no-self-update` and
+`rustup target add <triple> --toolchain <channel>`, both best effort with the
+same timeout; cargo reports real problems. Status: adopted.
+
+### Deviation: release binaries carry no build machine paths
+
+CI builds with `tool/build.dart --release-paths`, which remaps the home,
+rustup, cargo and checkout directories with `--remap-path-prefix` through
+`CARGO_ENCODED_RUSTFLAGS` (repeating the Windows `+crt-static` flag, since the
+variable replaces the config's rustflags). Only CI-built libraries are staged
+for publishing. The local `aarch64-linux-gnu-gcc` linker table left
+`native/.cargo/config.toml`; `tool/build.dart` sets the linker through the
+environment for a plain arm64 Linux cross build. Status: adopted.
