@@ -19,6 +19,10 @@
 
 /**
  * Result of every fallible Frustbite function.
+ *
+ * New codes may be added in minor versions, so do not switch exhaustively over this
+ * without a default case.
+ *
  */
 enum FrustbiteErrorCode
 #if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
@@ -28,35 +32,35 @@ enum FrustbiteErrorCode
   /**
    * The operation succeeded.
    */
-  Success = 0,
+  FrustbiteErrorCode_Success = 0,
   /**
    * The provided path is empty, malformed, or refers to a non-existent file.
    */
-  InvalidPath = 1,
+  FrustbiteErrorCode_InvalidPath = 1,
   /**
    * The audio format is not recognised or not supported by this build.
    */
-  UnsupportedFormat = 2,
+  FrustbiteErrorCode_UnsupportedFormat = 2,
   /**
    * The audio bytes are corrupt or do not match the expected format.
    */
-  DecodingError = 3,
+  FrustbiteErrorCode_DecodingError = 3,
   /**
    * An underlying I/O operation (read/write) failed.
    */
-  IoError = 4,
+  FrustbiteErrorCode_IoError = 4,
   /**
    * A handle or output pointer was null, or the handle has been freed.
    */
-  InvalidPointer = 5,
+  FrustbiteErrorCode_InvalidPointer = 5,
   /**
    * A scalar parameter is out of range.
    */
-  InvalidParameter = 6,
+  FrustbiteErrorCode_InvalidParameter = 6,
   /**
    * An unclassified error occurred.
    */
-  Unknown = 99,
+  FrustbiteErrorCode_Unknown = 99,
 };
 #ifndef __cplusplus
 #if __STDC_VERSION__ >= 202311L
@@ -218,10 +222,14 @@ typedef struct FrustbiteAudioInfo {
    */
   uint32_t bitrate;
   /**
-   * Playable frames per channel, after encoder delay and padding. Exception: for AAC in
-   * MP4 (m4a) it comes from the mdhd duration without the edit list, so it includes the
-   * 1024-frame encoder priming; decoding yields priming plus padding, so it is not exactly
-   * the number of playable frames.
+   * Frames per channel, with encoder delay and padding trimmed as far as the container
+   * allows:
+   * - exact: WAV, FLAC, MP3 with a LAME/Xing header, Vorbis, Ogg Opus and ALAC;
+   * - includes the 1024-frame encoder priming: AAC in MP4 (m4a, from the mdhd duration
+   *   without the edit list) and ADTS; decoding yields priming plus padding, so it is not
+   *   exactly the number of playable frames;
+   * - WebM Opus can carry up to one packet of tail padding;
+   * - MP3 without a LAME/Xing header is counted from the packets.
    */
   uint64_t total_frames;
   /**

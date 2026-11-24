@@ -260,7 +260,14 @@ mod tests {
     #[cfg(all(feature = "mp3", feature = "aac", feature = "vorbis", feature = "opus"))]
     #[test]
     fn decode_lossy_fixtures_have_tone() {
-        for name in ["tone.mp3", "tone.m4a", "tone.ogg", "tone.opus", "tone.webm"] {
+        for name in [
+            "tone.mp3",
+            "tone.m4a",
+            "tone.aac",
+            "tone.ogg",
+            "tone.opus",
+            "tone.webm",
+        ] {
             let decoded = decode(name).unwrap();
             assert_stereo_tone(name, &decoded);
         }
@@ -332,12 +339,12 @@ mod tests {
     #[cfg(all(feature = "aac", feature = "opus"))]
     #[test]
     fn decode_frames_differ_from_info_by_a_documented_tolerance() {
-        // AAC in MP4: info uses the mdhd duration without the edit list, so it includes the
-        // 1024-frame encoder priming; decoding yields priming plus padding, so the two differ
+        // AAC in MP4 and ADTS: info includes the 1024-frame encoder priming (MP4: the mdhd
+        // duration without the edit list); decoding yields priming plus padding, so the two differ
         // by up to one packet.
         // WebM Opus: no end trim exists (Symphonia drops DiscardPadding), so decoding keeps the
         // tail padding, and the duration in the info comes from millisecond timestamps.
-        for (name, tolerance) in [("tone.m4a", 1024), ("tone.webm", 960)] {
+        for (name, tolerance) in [("tone.m4a", 1024), ("tone.aac", 1024), ("tone.webm", 960)] {
             let audio = FrustbiteAudio::open_file(format!("{FIXTURES}{name}"), None).unwrap();
             let info = audio.info().unwrap();
             let frames = decoded_frames(&audio.decode().unwrap());

@@ -147,10 +147,14 @@ pub struct FrustbiteAudioInfo {
     pub bits_per_sample: u32,
     /// Average bitrate in bits per second; 0 when unknown.
     pub bitrate: u32,
-    /// Playable frames per channel, after encoder delay and padding. Exception: for AAC in
-    /// MP4 (m4a) it comes from the mdhd duration without the edit list, so it includes the
-    /// 1024-frame encoder priming; decoding yields priming plus padding, so it is not exactly
-    /// the number of playable frames.
+    /// Frames per channel, with encoder delay and padding trimmed as far as the container
+    /// allows:
+    /// - exact: WAV, FLAC, MP3 with a LAME/Xing header, Vorbis, Ogg Opus and ALAC;
+    /// - includes the 1024-frame encoder priming: AAC in MP4 (m4a, from the mdhd duration
+    ///   without the edit list) and ADTS; decoding yields priming plus padding, so it is not
+    ///   exactly the number of playable frames;
+    /// - WebM Opus can carry up to one packet of tail padding;
+    /// - MP3 without a LAME/Xing header is counted from the packets.
     pub total_frames: u64,
     /// Duration in microseconds.
     pub duration_us: u64,
@@ -193,6 +197,13 @@ pub struct FrustbiteAudio {
     #[cfg(test)]
     pub(crate) tags_builds: std::sync::atomic::AtomicUsize,
 }
+
+// The Dart side shares one handle between isolates (decode on a background isolate), so a
+// non-thread-safe field must fail the build here instead of becoming a data race.
+const _: () = {
+    const fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<FrustbiteAudio>();
+};
 
 impl FrustbiteAudio {
     /// Copies `data` and probes it.
@@ -614,6 +625,7 @@ mod tests {
                 ("tone.mp3", Ct::Mp3, Co::Mp3),
                 ("tone_vbr_noxing.mp3", Ct::Mp3, Co::Mp3),
                 ("tone.m4a", Ct::Mp4, Co::Aac),
+                ("tone.aac", Ct::Adts, Co::Aac),
                 ("tone_alac.m4a", Ct::Mp4, Co::Alac),
                 ("tone.flac", Ct::Flac, Co::Flac),
                 ("tone.ogg", Ct::Ogg, Co::Vorbis),
@@ -632,6 +644,15 @@ mod tests {
                 );
                 assert!(info.bitrate > 0, "{name} bitrate");
             }
+        }
+
+        #[test]
+        fn info_adts_is_aac_lc_44k() {
+            let info = info("tone.aac");
+            assert_eq!(info.container, FrustbiteContainer::Adts as u32);
+            assert_eq!(info.codec, FrustbiteCodec::Aac as u32);
+            assert_eq!((info.sample_rate, info.channels), (44_100, 2));
+            assert!(info.duration_us.abs_diff(3_000_000) < 50_000);
         }
 
         #[test]

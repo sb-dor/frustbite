@@ -115,6 +115,28 @@ $declarations
   }
 }
 
+/// The `///` doc lines of the C comment right before the enum at [start].
+String _enumDoc(String header, int start) {
+  final before = header.substring(0, start).trimRight();
+  if (!before.endsWith('*/')) return '';
+  final comment = before.substring(
+    before.lastIndexOf('/**') + 3,
+    before.length - 2,
+  );
+  final lines = comment
+      .split('\n')
+      .map((line) => line.replaceFirst(RegExp(r'^\s*\*? ?'), '').trimRight())
+      .toList();
+  while (lines.isNotEmpty && lines.first.isEmpty) {
+    lines.removeAt(0);
+  }
+  while (lines.isNotEmpty && lines.last.isEmpty) {
+    lines.removeLast();
+  }
+  final doc = lines.map((line) => line.isEmpty ? '///' : '/// $line');
+  return '${doc.join('\n')}\n';
+}
+
 String _dartEnum(String header, String name) {
   final start = header.indexOf('enum $name\n');
   if (start == -1) throw StateError('$name was not found in the header');
@@ -125,11 +147,11 @@ String _dartEnum(String header, String name) {
   final members = RegExp(
     r'(?:/\*\*\s*((?:.|\n)*?)\s*\*/\s*)?(\w+) = (\d+),',
   ).allMatches(body);
-  final hasUnknown = RegExp(r'\bUnknown = ').hasMatch(body);
+  final hasUnknown = RegExp('\\b(?:${name}_)?Unknown = ').hasMatch(body);
   final orElse = hasUnknown
       ? '() => $name.unknown'
       : "() => throw ArgumentError.value(value, 'value', 'Unknown $name')";
-  final buffer = StringBuffer('enum $name {\n');
+  final buffer = StringBuffer(_enumDoc(header, start))..write('enum $name {\n');
   final entries = <String>[];
   for (final member in members) {
     final doc = member[1]

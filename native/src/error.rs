@@ -1,6 +1,11 @@
 //! Error codes shared with the Dart side.
 
 /// Result of every fallible Frustbite function.
+///
+/// New codes may be added in minor versions, so do not switch exhaustively over this
+/// without a default case.
+///
+/// cbindgen:prefix-with-name
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
 pub enum FrustbiteErrorCode {

@@ -20,6 +20,7 @@ encoder (`vorbis -strict -2`) is used when `libvorbis` is missing.
 | `tone.mp3` | same signal, CBR 128 kbps, ID3v2.4 tags + cover |
 | `tone_vbr_noxing.mp3` | VBR, no Xing/Info header, no tags |
 | `tone.m4a` | AAC-LC 128 kbps, MP4 tags + cover |
+| `tone.aac` | AAC-LC 128 kbps in raw ADTS, no tags |
 | `tone_he.m4a` | HE-AAC (made with `afconvert`), for the unsupported test |
 | `tone_alac.m4a` | ALAC |
 | `tone.flac` | FLAC, Vorbis comments + cover |
@@ -37,4 +38,4 @@ Tagged files carry title `frustbite tone`, artist `frustbite`, album
 `fixtures`, year 2026, track 1/1, genre `Test`. MP3, M4A, FLAC, Ogg Vorbis
 and Opus also carry a 64x64 blue PNG cover (attached picture; for Ogg/Opus a
 `METADATA_BLOCK_PICTURE` Vorbis comment). `tone_he.m4a`, `tone_alac.m4a`,
-`tone_vbr_noxing.mp3` and `tone.webm` are untagged.
+`tone_vbr_noxing.mp3`, `tone.aac` and `tone.webm` are untagged.

@@ -236,10 +236,14 @@ final class FrustbiteAudioInfo extends ffi.Struct {
   @ffi.Uint32()
   external int bitrate;
 
-  /// Playable frames per channel, after encoder delay and padding. Exception: for AAC in
-  /// MP4 (m4a) it comes from the mdhd duration without the edit list, so it includes the
-  /// 1024-frame encoder priming; decoding yields priming plus padding, so it is not exactly
-  /// the number of playable frames.
+  /// Frames per channel, with encoder delay and padding trimmed as far as the container
+  /// allows:
+  /// - exact: WAV, FLAC, MP3 with a LAME/Xing header, Vorbis, Ogg Opus and ALAC;
+  /// - includes the 1024-frame encoder priming: AAC in MP4 (m4a, from the mdhd duration
+  /// without the edit list) and ADTS; decoding yields priming plus padding, so it is not
+  /// exactly the number of playable frames;
+  /// - WebM Opus can carry up to one packet of tail padding;
+  /// - MP3 without a LAME/Xing header is counted from the packets.
   @ffi.Uint64()
   external int total_frames;
 

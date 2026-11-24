@@ -26,7 +26,12 @@ final class AudioInfo {
   /// Average bitrate in bits per second; null when unknown.
   final int? bitrate;
 
-  /// Playable frames per channel.
+  /// Frames per channel, trimmed as far as the container allows.
+  ///
+  /// Exact for wav, flac, mp3 with a LAME/Xing header, vorbis, ogg-opus and
+  /// alac. Includes the 1024-frame encoder priming for m4a and ADTS AAC. WebM
+  /// can carry up to one packet of tail padding. mp3 without a LAME/Xing header
+  /// is counted from the packets.
   final int totalFrames;
   final Duration duration;
 

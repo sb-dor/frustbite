@@ -2,6 +2,10 @@
 //
 // Generated from native/include/frustbite.h by tool/generate_bindings.dart.
 
+/// Result of every fallible Frustbite function.
+///
+/// New codes may be added in minor versions, so do not switch exhaustively over this
+/// without a default case.
 enum FrustbiteErrorCode {
   /// The operation succeeded.
   success(0),
@@ -37,6 +41,7 @@ enum FrustbiteErrorCode {
   );
 }
 
+/// Container formats. Values are part of the ABI.
 enum FrustbiteContainer {
   /// MPEG audio stream.
   mp3(0),
@@ -70,6 +75,7 @@ enum FrustbiteContainer {
   );
 }
 
+/// Audio codecs. Values are part of the ABI.
 enum FrustbiteCodec {
   /// MPEG-1/2 Layer III.
   mp3(0),
@@ -103,6 +109,7 @@ enum FrustbiteCodec {
   );
 }
 
+/// How a bucket's amplitude is computed. Values are part of the ABI.
 enum FrustbiteWaveformMode {
   /// Largest absolute sample value.
   peak(0),

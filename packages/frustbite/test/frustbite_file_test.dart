@@ -12,6 +12,22 @@ void main() {
     expect(audio.decode().channels, 2);
   });
 
+  test('reads raw ADTS AAC', () {
+    final audio = Frustbite.fromFile('test/fixtures/tone.aac');
+    addTearDown(audio.dispose);
+    final info = audio.info;
+    expect(info.container, AudioContainer.adts);
+    expect(info.codec, AudioCodec.aac);
+    expect(info.sampleRate, 44100);
+    expect(info.channels, 2);
+    expect(
+      (info.duration - const Duration(seconds: 3)).inMilliseconds.abs(),
+      lessThan(50),
+    );
+    // Includes the 1024-frame encoder priming, like m4a.
+    expect(audio.decode().frames, info.totalFrames);
+  });
+
   test('fromFile honors the format hint', () {
     final audio = Frustbite.fromFile(
       'test/fixtures/tone.wav',

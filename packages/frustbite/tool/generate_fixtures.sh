@@ -2,6 +2,9 @@
 # Generates the audio fixtures in test/fixtures from synthetic signals.
 # Dev-only tool: assumes macOS + Homebrew ffmpeg (needs afconvert for
 # HE-AAC, and python3). Idempotent: re-running overwrites every fixture.
+# The encoders are not guaranteed bit-exact across ffmpeg versions, so a rerun may
+# change the bytes of the other fixtures; tone.aac was added later and was
+# generated alone with the ADTS line below.
 set -euo pipefail
 
 FFMPEG="${FFMPEG:-ffmpeg}"
@@ -75,6 +78,9 @@ ff "${SRC[@]}" "${COVER[@]}" "${TAGS[@]}" -c:a aac -b:a 128k -c:v copy \
 # HE-AAC: ffmpeg's aac_at has no profile option, so use macOS afconvert.
 afconvert -f m4af -d aach -b 64000 tone.wav tone_he.m4a
 ff "${SRC[@]}" -c:a alac tone_alac.m4a
+
+# ADTS AAC-LC (raw .aac stream, no container metadata).
+ff "${SRC[@]}" -c:a aac -b:a 128k -f adts tone.aac
 
 # FLAC
 ff "${SRC[@]}" "${COVER[@]}" "${TAGS[@]}" -c:a flac -c:v copy tone.flac
