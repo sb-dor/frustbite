@@ -12,6 +12,8 @@
 //   AudioCover? cover();
 //   Waveform waveform(int buckets, WaveformMode mode, bool perChannel);
 //   AudioPcm decode();
+//   Future<Waveform> waveformAsync(int buckets, WaveformMode mode, bool perChannel);
+//   Future<AudioPcm> decodeAsync();
 //   void dispose();
 // }
 // ```

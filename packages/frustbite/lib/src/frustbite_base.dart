@@ -29,6 +29,16 @@ final class Frustbite {
   AudioCover? _cover;
   bool _coverRead = false;
 
+  /// Async operations in flight. `this` stays referenced by the running async
+  /// method, so the finalizer cannot run before they complete.
+  int _busy = 0;
+
+  static void _checkBuckets(int buckets) {
+    if (buckets < 1 || buckets > 100000) {
+      throw InvalidParameterException('buckets must be in 1..100000');
+    }
+  }
+
   /// ABI version of the loaded native library, verified against this package.
   static int get abiVersion => BackendAudio.abiVersion;
 
@@ -95,6 +105,7 @@ final class Frustbite {
     bool perChannel = false,
   }) {
     _checkDisposed();
+    _checkBuckets(buckets);
     return _backend.waveform(buckets, mode, perChannel);
   }
 
@@ -104,9 +115,43 @@ final class Frustbite {
     return _backend.decode();
   }
 
+  /// Like [waveform], but runs on a background isolate.
+  ///
+  /// [dispose] throws [StateError] while this is in flight.
+  Future<Waveform> waveformAsync({
+    int buckets = 100,
+    WaveformMode mode = WaveformMode.peak,
+    bool perChannel = false,
+  }) async {
+    _checkDisposed();
+    _checkBuckets(buckets);
+    _busy++;
+    try {
+      return await _backend.waveformAsync(buckets, mode, perChannel);
+    } finally {
+      _busy--;
+    }
+  }
+
+  /// Like [decode], but runs on a background isolate.
+  ///
+  /// [dispose] throws [StateError] while this is in flight.
+  Future<AudioPcm> decodeAsync() async {
+    _checkDisposed();
+    _busy++;
+    try {
+      return await _backend.decodeAsync();
+    } finally {
+      _busy--;
+    }
+  }
+
   /// Releases the native resources. Safe to call more than once.
   void dispose() {
     if (_isDisposed) return;
+    if (_busy > 0) {
+      throw StateError('Cannot dispose while an async operation is running');
+    }
     _isDisposed = true;
     _backend.dispose();
   }

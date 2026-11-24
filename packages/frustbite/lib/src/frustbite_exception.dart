@@ -14,7 +14,7 @@ sealed class FrustbiteException implements Exception {
   final String message;
 
   @override
-  String toString() => 'FrustbiteException: $message (code: ${code.name})';
+  String toString() => '$runtimeType: $message (code: ${code.name})';
 
   static String _defaultMessage(FrustbiteErrorCode code) => switch (code) {
     FrustbiteErrorCode.success => 'Success',

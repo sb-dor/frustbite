@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:ffi' as ffi;
 import 'dart:typed_data';
 
@@ -110,6 +111,22 @@ final class BackendAudio implements ffi.Finalizable {
 
   AudioPcm decode() => nativeDecode(address);
 
+  // The closures capture only ints and enums, never `this`: a BackendAudio is
+  // Finalizable and must not cross isolates. The caller keeps `this` alive.
+  Future<Waveform> waveformAsync(
+    int buckets,
+    WaveformMode mode,
+    bool perChannel,
+  ) {
+    final addr = address;
+    return Isolate.run(() => nativeWaveform(addr, buckets, mode, perChannel));
+  }
+
+  Future<AudioPcm> decodeAsync() {
+    final addr = address;
+    return Isolate.run(() => nativeDecode(addr));
+  }
+
   void dispose() {
     _finalizer.detach(this);
     frustbite_free(_handle);
@@ -144,10 +161,14 @@ AudioTags nativeTags(int address) => ffi.using((arena) {
     frustbite_get_tags_json(_ptr(address), out, outLen),
     'operation: tags',
   );
-  final bytes = _copyBytes(out.value, outLen.value);
-  if (bytes.isEmpty) return AudioTags.empty;
-  final json = jsonDecode(utf8.decode(bytes)) as Map<String, Object?>;
-  return AudioTags.fromJson(json);
+  try {
+    final bytes = _copyBytes(out.value, outLen.value);
+    if (bytes.isEmpty) return AudioTags.empty;
+    final json = jsonDecode(utf8.decode(bytes)) as Map<String, Object?>;
+    return AudioTags.fromJson(json);
+  } finally {
+    _freeBytes(out.value, outLen.value);
+  }
 });
 
 /// Reads the cover of the handle at [address]; null when there is none.
@@ -160,10 +181,16 @@ AudioCover? nativeCover(int address) => ffi.using((arena) {
     frustbite_get_cover(_ptr(address), out, outLen, mime, mimeLen),
     'operation: cover',
   );
-  final data = _copyBytes(out.value, outLen.value);
-  final mimeBytes = _copyBytes(mime.value, mimeLen.value);
-  if (data.isEmpty) return null;
-  return AudioCover(data: data, mimeType: utf8.decode(mimeBytes));
+  // Both buffers are freed even if the first copy throws.
+  try {
+    final data = _copyBytes(out.value, outLen.value);
+    final mimeBytes = _copyBytes(mime.value, mimeLen.value);
+    if (data.isEmpty) return null;
+    return AudioCover(data: data, mimeType: utf8.decode(mimeBytes));
+  } finally {
+    _freeBytes(out.value, outLen.value);
+    _freeBytes(mime.value, mimeLen.value);
+  }
 });
 
 /// Computes a waveform for the handle at [address].
@@ -173,7 +200,6 @@ Waveform nativeWaveform(
   WaveformMode mode,
   bool perChannel,
 ) => ffi.using((arena) {
-  final channels = nativeInfo(address).channels;
   final out = arena<ffi.Pointer<ffi.Float>>();
   final outLen = arena<ffi.Size>();
   checkError(
@@ -191,7 +217,7 @@ Waveform nativeWaveform(
   return Waveform(
     data: data,
     buckets: buckets,
-    channels: perChannel ? channels : 1,
+    channels: data.length ~/ buckets,
   );
 });
 
@@ -213,14 +239,13 @@ AudioPcm nativeDecode(int address) => ffi.using((arena) {
   );
 });
 
-/// Copies a native byte buffer into Dart memory and frees it.
-Uint8List _copyBytes(ffi.Pointer<ffi.Uint8> ptr, int len) {
-  if (ptr == ffi.nullptr) return Uint8List(0);
-  try {
-    return Uint8List.fromList(ptr.asTypedList(len));
-  } finally {
-    frustbite_free_bytes(ptr, len);
-  }
+/// Copies a native byte buffer into Dart memory. Does not free it.
+Uint8List _copyBytes(ffi.Pointer<ffi.Uint8> ptr, int len) => ptr == ffi.nullptr
+    ? Uint8List(0)
+    : Uint8List.fromList(ptr.asTypedList(len));
+
+void _freeBytes(ffi.Pointer<ffi.Uint8> ptr, int len) {
+  if (ptr != ffi.nullptr) frustbite_free_bytes(ptr, len);
 }
 
 /// Copies a native f32 buffer into Dart memory and frees it.

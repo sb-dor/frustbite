@@ -26,5 +26,11 @@ final class BackendAudio {
   Waveform waveform(int buckets, WaveformMode mode, bool perChannel) =>
       throw UnimplementedError('web backend');
   AudioPcm decode() => throw UnimplementedError('web backend');
+  Future<Waveform> waveformAsync(
+    int buckets,
+    WaveformMode mode,
+    bool perChannel,
+  ) => throw UnimplementedError('web backend');
+  Future<AudioPcm> decodeAsync() => throw UnimplementedError('web backend');
   void dispose() => throw UnimplementedError('web backend');
 }
