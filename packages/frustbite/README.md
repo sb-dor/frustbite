@@ -1,5 +1,12 @@
 # frustbite
 
+[![CI](https://github.com/sb-dor/frustbite/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/sb-dor/frustbite/actions/workflows/ci.yaml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/sb-dor/frustbite/blob/main/LICENSE)
+[![Docs](https://img.shields.io/badge/docs-sb--dor.github.io%2Ffrustbite-informational)](https://sb-dor.github.io/frustbite/)
+<!-- Enable after the first pub.dev release; the badge shows "not found" before that.
+[![pub package](https://img.shields.io/pub/v/frustbite.svg)](https://pub.dev/packages/frustbite)
+-->
+
 Read audio from pure Dart: stream info, tags, cover art, waveforms and decoded
 PCM. A Rust crate does the work through FFI and Dart build hooks on native
 platforms and through WebAssembly on the web.
@@ -7,6 +14,13 @@ platforms and through WebAssembly on the web.
 Stage 1 is read-only. Editing and encoding are on the [roadmap](#roadmap).
 
 Full documentation: <https://sb-dor.github.io/frustbite/>.
+
+## Showcase
+
+The [Flutter showcase](https://github.com/sb-dor/frustbite/tree/main/packages/showcase)
+shows info, tags and a waveform:
+
+<img src="https://raw.githubusercontent.com/sb-dor/frustbite/main/docs/images/showcase-ios.png" alt="frustbite showcase on iPhone" width="300">
 
 ## Install
 
