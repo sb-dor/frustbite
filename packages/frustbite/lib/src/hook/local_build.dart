@@ -83,7 +83,8 @@ class CargoBuildException implements Exception {
 /// codecs are compiled in; otherwise all [supportedFormats] are.
 ///
 /// Runs `cargo build --release --locked` with the crate as working directory
-/// (so its `.cargo/config.toml` applies) and a `--target-dir` under
+/// (so its `.cargo/config.toml` applies; a staged package passes its
+/// `cargo-config.toml` with `--config`, see [stagedCargoConfig]) and a `--target-dir` under
 /// `outputDirectoryShared/cargo/<key>/`, where the key holds the NDK API or
 /// the Apple deployment version: cargo does not fingerprint those.
 ///
@@ -187,6 +188,7 @@ Future<Uri> cargoBuild(
         'build',
         '--release',
         '--locked',
+        ...cargoConfigArgs(crateDir),
         '--target',
         triple,
         '--target-dir',

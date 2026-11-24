@@ -135,9 +135,12 @@ case "$target" in
   android_*)
     check_elf_common
     # Every LOAD segment's alignment is the last column of `readelf -lW`.
-    bad="$(elf_tool -lW "$file" | awk '$1 == "LOAD" && $NF != "0x4000" {print $NF}')"
-    [[ -z "$bad" ]] || fail "LOAD segments not aligned to 16 KB: $bad"
-    echo "LOAD segments: all 16 KB aligned"
+    aligns="$(elf_tool -lW "$file" | awk '$1 == "LOAD" {print $NF}' || true)"
+    # An empty parse (a readelf format change, a stripped header) must not pass.
+    [[ -n "$aligns" ]] || fail "no LOAD segments parsed from the program headers"
+    bad="$(awk '$1 != "0x4000"' <<<"$aligns")"
+    [[ -z "$bad" ]] || fail "LOAD segments not aligned to 16 KB: ${bad//$'\n'/ }"
+    echo "LOAD segments: $(wc -l <<<"$aligns" | tr -d ' ') parsed, all 16 KB aligned"
     ;;
   linux_*)
     check_elf_common

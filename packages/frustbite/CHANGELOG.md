@@ -1,3 +1,30 @@
+## 0.0.2
+
+Distribution: the native libraries now ship inside the package.
+
+- The 12 prebuilt libraries are bundled under `prebuilt/` in the pub archive,
+  with a `checksums.json` the build hook verifies (SHA-256). Nothing is
+  downloaded at build time; the hook works offline and in locked-down CI.
+- One file name per target (`libfrustbite.so`, `libfrustbite.dylib`,
+  `frustbite.dll`); the target is only the directory name. A macOS or iOS
+  build no longer warns about different framework names per architecture.
+- User defines: `source: auto | prebuilt | build | none` (a map per OS is
+  accepted), `library: <path>` for your own build, and `formats` / `local_build`
+  (both mean `source: build`). A typo is an error, never a silent default.
+- Source builds work from pub.dev too: the package carries the Rust crate in
+  `rust/` and the hook falls back to `cargo build --locked` when no bundled
+  library fits, or when `source: build` is set. Cargo is found in
+  `~/.cargo/bin` even when it is not on `PATH`.
+- Linux libraries are built with `cargo zigbuild` against glibc 2.17 (was: the
+  CI runner's glibc 2.35), so they load on older distributions.
+- `build.rs` sets the link flags: 16 KB page alignment on Android, a
+  relocatable `@rpath` install name with header padding on Apple platforms, a
+  static libgcc on Linux, and a static C runtime on Windows (no VC++
+  redistributable needed).
+- Every library is verified before release: only `frustbite_*` exports,
+  Android alignment, the glibc floor, allowed Linux dependencies, the Apple
+  install name and minimum OS, and no VC++ runtime import on Windows.
+
 ## 0.0.1
 
 Stage 1: reading.

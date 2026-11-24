@@ -26,7 +26,7 @@ shows info, tags and a waveform:
 
 ```yaml
 dependencies:
-  frustbite: ^0.0.1
+  frustbite: ^0.0.2
 ```
 
 The build hook downloads the prebuilt native library for your platform from the

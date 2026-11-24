@@ -66,9 +66,21 @@ CI runs the same checks on every pull request.
 
 ## Releases
 
-Maintainers release by pushing a tag `frustbite-assets-vX.Y.Z` on `main`. The
+Maintainers release by pushing a tag `frustbite-vX.Y.Z` on `main`. The
 tag must match the `pubspec.yaml` version and a
 `## X.Y.Z` section in the CHANGELOG. The `build_release.yaml` workflow then
-builds the 12 native libraries and `frustbite.wasm` and publishes them as a
-GitHub Release (the package bundles those libraries under `prebuilt/`; the
-docs pass in a later task covers the details).
+builds and verifies the 12 native libraries and `frustbite.wasm`, stages the
+package (`packages/frustbite/tool/stage_package.dart`) and runs
+`dart pub publish --dry-run` on it, then creates the GitHub Release with the
+libraries, `frustbite.wasm`, `THIRD_PARTY_LICENSES.md` and `checksums.json`.
+Publishing to pub.dev stays manual, from the released assets:
+
+```sh
+cd packages/frustbite
+dart tool/stage_package.dart --from-release frustbite-vX.Y.Z --out ../../../frustbite-stage
+dart tool/check_pubignore.dart ../../../frustbite-stage
+cd ../../../frustbite-stage && dart pub publish
+```
+
+The same staging and dry run run on every pull request and manual run of the
+workflow, from that run's own build artifacts.

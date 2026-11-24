@@ -1,4 +1,6 @@
-# Tests frustbite and builds/releases its prebuilt native assets.
+# Tests frustbite, builds and verifies its native libraries, stages the package
+# for pub.dev and, on a `frustbite-v<version>` tag, creates the GitHub Release.
+# Publishing to pub.dev stays manual (see CONTRIBUTING.md).
 name: frustbite_prebuild_assets
 
 permissions:
@@ -12,9 +14,10 @@ on:
       - native/**
       - packages/frustbite/**
       - pubspec.yaml
+      - tool/**
   push:
     tags:
-      - "frustbite-assets-v*"
+      - "frustbite-v*"
   workflow_dispatch:
 
 concurrency:
@@ -36,14 +39,15 @@ jobs:
         with:
           fetch-depth: 0
       - name: Check release versions
-        if: startsWith(github.ref, 'refs/tags/frustbite-assets-v')
+        if: startsWith(github.ref, 'refs/tags/frustbite-v')
         run: |
           version=$(sed -n 's/^version: //p' pubspec.yaml)
+          crate=$(awk -F'"' '/^version = /{print $2; exit}' ../../native/Cargo.toml)
           fail() { echo "::error::$1"; exit 1; }
-          [ "$GITHUB_REF_NAME" = "frustbite-assets-v$version" ] \
+          [ "$GITHUB_REF_NAME" = "frustbite-v$version" ] \
             || fail "Tag $GITHUB_REF_NAME does not match pubspec version $version"
-          grep -qx "const version = '$GITHUB_REF_NAME';" lib/src/hook/version.dart \
-            || fail "lib/src/hook/version.dart does not point at $GITHUB_REF_NAME"
+          [ "$crate" = "$version" ] \
+            || fail "native/Cargo.toml version $crate does not match pubspec version $version"
           grep -Fqx "## $version" CHANGELOG.md \
             || fail "CHANGELOG.md has no '## $version' section"
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
@@ -178,10 +182,17 @@ jobs:
 
       # glibc 2.17 floor: tool/build.dart runs `cargo zigbuild --target
       # <triple>.2.17` when FRUSTBITE_ZIGBUILD=1. Versions are pinned.
+      # ziglang goes into a virtual environment: newer Ubuntu images mark the
+      # system Python as externally managed (PEP 668), which makes a plain
+      # `pip install`, and `--user` as well, fail. A venv needs no
+      # `--break-system-packages` and leaves the runner's Python alone; its
+      # bin directory (with the `zig` launcher) goes on PATH for the build.
       - name: Install zig and cargo-zigbuild
         if: startsWith(matrix.target, 'linux_')
         run: |
-          pip3 install ziglang==0.17.1
+          python3 -m venv "$RUNNER_TEMP/zig-venv"
+          "$RUNNER_TEMP/zig-venv/bin/pip" install ziglang==0.17.1
+          echo "$RUNNER_TEMP/zig-venv/bin" >> "$GITHUB_PATH"
           cargo install cargo-zigbuild --version 0.24.1 --locked
 
       # Uses the NDK preinstalled on GitHub's ubuntu runners; tool/build.dart
@@ -216,9 +227,44 @@ jobs:
           path: packages/frustbite/libs/
           if-no-files-found: error
 
+  # Stages the package exactly as it would be published, from the libraries
+  # this run built, and dry-runs `dart pub publish` on it. Runs on pull
+  # requests and manual runs too, so staging is tested before any tag.
+  stage:
+    needs: build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/frustbite/
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dart-lang/setup-dart@2286a0c042b44434fe26d292bbce8d34f7ec662b # v1.8.2
+        with:
+          sdk: stable
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: asset-*
+          merge-multiple: true
+          path: packages/frustbite/libs/
+      - run: dart pub get
+      # Fails with fewer than 12 libraries; --allow-partial is never used here.
+      - name: Stage the package
+        run: dart tool/stage_package.dart --from-dir libs --out "$RUNNER_TEMP/frustbite"
+      - name: Check the staged .pubignore
+        run: dart tool/check_pubignore.dart "$RUNNER_TEMP/frustbite"
+      - name: Publish dry run
+        working-directory: ${{ runner.temp }}/frustbite
+        run: dart pub publish --dry-run
+      # The release publishes the checksums the staged package carries.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: checksums
+          path: ${{ runner.temp }}/frustbite/prebuilt/checksums.json
+          if-no-files-found: error
+
   release:
-    if: startsWith(github.ref, 'refs/tags/frustbite-assets-v')
-    needs: [rust, dart, build, wasm]
+    if: startsWith(github.ref, 'refs/tags/frustbite-v')
+    needs: [rust, dart, build, wasm, stage]
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub Release
@@ -232,6 +278,10 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: wasm
+          path: assets/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: checksums
           path: assets/
       # The artifacts hold libs/<target>/<one file name>. Release assets need
       # unique names, so each file becomes libfrustbite_<target>.<ext> (the
@@ -257,14 +307,15 @@ jobs:
       - name: Check the asset list
         env:
           # Keep in sync with the build matrix targets. The release holds one
-          # file per target (12), frustbite.wasm and THIRD_PARTY_LICENSES.md (14).
+          # file per target (12), frustbite.wasm, THIRD_PARTY_LICENSES.md and
+          # checksums.json (15).
           TARGETS: >-
             android_armv7 android_arm64 android_x86_64 linux_aarch64 linux_x86_64
             ios_arm64 ios_sim_arm64 ios_sim_x86_64 macos_arm64 macos_x86_64
             windows_arm64 windows_x86_64
         run: |
           ls -l assets/
-          expected=(frustbite.wasm THIRD_PARTY_LICENSES.md)
+          expected=(frustbite.wasm THIRD_PARTY_LICENSES.md checksums.json)
           for target in $TARGETS; do
             case "$target" in
               ios_* | macos_*) expected+=("libfrustbite_${target}.dylib") ;;

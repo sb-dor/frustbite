@@ -191,6 +191,21 @@ Directory? findCrateDir(Uri packageRoot) {
   return null;
 }
 
+/// The file name of the cargo config a staged package carries in `rust/`.
+///
+/// pub leaves hidden files and directories out of the archive, so the crate's
+/// `.cargo/config.toml` (`+crt-static` on Windows MSVC) cannot ship as it is.
+/// `tool/stage_package.dart` writes the same settings to this visible file,
+/// and [cargoConfigArgs] passes it to cargo.
+const stagedCargoConfig = 'cargo-config.toml';
+
+/// The cargo arguments that load the staged config of [crateDir]; none in a
+/// repository checkout, where cargo reads `.cargo/config.toml` itself.
+List<String> cargoConfigArgs(Directory crateDir) {
+  final config = File.fromUri(crateDir.absolute.uri.resolve(stagedCargoConfig));
+  return config.existsSync() ? ['--config', config.path] : const [];
+}
+
 /// The `name` of the `[package]` table in a Cargo.toml text, or `null`.
 String? cargoPackageName(String manifest) {
   final name = RegExp(r'''^name\s*=\s*(["'])(.*?)\1''');
@@ -291,7 +306,7 @@ List<Uri> existingFiles(Iterable<Uri> uris) => [
 ];
 
 /// The files whose change must rerun the hook: the crate's manifest, lock
-/// file, build script, toolchain and cargo config, its `src/**/*.rs`, the
+/// file, build script, toolchain and cargo configs, its `src/**/*.rs`, the
 /// bundled `checksums.json` and the target's prebuilt library. Only files
 /// that exist.
 List<Uri> hookDependencies({
@@ -310,6 +325,7 @@ List<Uri> hookDependencies({
       crateDir.uri.resolve('build.rs'),
       crateDir.uri.resolve('rust-toolchain.toml'),
       crateDir.uri.resolve('.cargo/config.toml'),
+      crateDir.uri.resolve(stagedCargoConfig),
       if (Directory.fromUri(crateDir.uri.resolve('src/')).existsSync())
         for (final entity in Directory.fromUri(
           crateDir.uri.resolve('src/'),
