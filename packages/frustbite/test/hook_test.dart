@@ -504,6 +504,7 @@ void main() {
         'frustbite',
       );
       expect(cargoPackageName('[lib]\nname = "x"\n'), isNull);
+      expect(cargoPackageName("[package]\nname = 'frustbite'\n"), 'frustbite');
     });
   });
 
