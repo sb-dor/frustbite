@@ -24,9 +24,12 @@ vorbis = ["symphonia/vorbis", "symphonia/ogg"]
 opus = ["dep:opus-pure", "symphonia/ogg", "symphonia/mkv"]
 wav = ["symphonia/wav", "symphonia/pcm"]
 
+# `unwind`, not `abort`: the FFI layer catches decoder panics on malformed input and reports
+# them as `Unknown` instead of killing the host app. wasm32-unknown-unknown cannot unwind,
+# so there a panic still traps.
 [profile.release]
 opt-level = 3
 lto = "fat"
 codegen-units = 1
-panic = "abort"
+panic = "unwind"
 strip = true

@@ -171,6 +171,16 @@ mod tests {
     }
 
     #[test]
+    fn panic_in_ffi_body_becomes_unknown() {
+        // Silence the default panic message for the deliberate panic.
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let code = guarded(|| panic!("simulated decoder panic"));
+        std::panic::set_hook(hook);
+        assert_eq!(code, FrustbiteErrorCode::Unknown);
+    }
+
+    #[test]
     fn abi_version_is_one() {
         assert_eq!(frustbite_abi_version(), 1);
     }
