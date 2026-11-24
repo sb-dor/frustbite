@@ -405,7 +405,7 @@ String pubspecVersion(String pubspec) {
 /// `owner/name` of the GitHub repository in a pubspec's `repository:` URL.
 String githubRepo(String pubspec) {
   final match = RegExp(
-    r'^repository:\s*https://github\.com/([^/\s]+/[^/\s]+?)/?\s*$',
+    r'^repository:\s*https://github\.com/([^/\s]+/[^/\s]+?)(?:\.git)?/?\s*$',
     multiLine: true,
   ).firstMatch(pubspec);
   if (match == null) {
