@@ -1,0 +1,35 @@
+{
+  "timestamp": "2026-11-24T13:32:04.654320",
+  "machine": "Apple M3 Pro, 11 cores",
+  "dart": "3.14.0",
+  "results": {
+    "info_mp3": {
+      "frustbite_us": 1179.5
+    },
+    "decode_mp3": {
+      "frustbite_us": 95914.0,
+      "audio_decode_us": 83723.5,
+      "glint_audio_pure_us": 7814082.5
+    },
+    "decode_vorbis": {
+      "frustbite_us": 105810.5,
+      "audio_decode_us": 124255.0
+    },
+    "decode_flac": {
+      "frustbite_us": 79407.0
+    },
+    "decode_wav": {
+      "frustbite_us": 24754.0,
+      "wav_us": 230289.5,
+      "audio_decode_us": 28132.0
+    },
+    "waveform_mp3_1000": {
+      "frustbite_us": 92929.5,
+      "audio_decode_us": 83197.5
+    },
+    "tags_mp3": {
+      "frustbite_us": 219.0,
+      "audio_metadata_reader_us": 93.0
+    }
+  }
+}
