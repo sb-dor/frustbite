@@ -1,12 +1,112 @@
-import 'abi.dart';
-import 'bindings/bindings.dart' as bindings;
+import 'dart:typed_data';
 
-/// Entry point of the library.
-abstract final class Frustbite {
+import 'audio_enums.dart';
+import 'audio_info.dart';
+import 'audio_pcm.dart';
+import 'audio_tags.dart';
+import 'backend.dart';
+import 'frustbite_exception.dart';
+import 'waveform.dart';
+
+/// An opened audio source, backed by Rust on native and web platforms.
+///
+/// Call [dispose] when done. Native finalizers are only a safety net. Using a
+/// disposed instance throws [StateError].
+///
+/// ```dart
+/// final audio = Frustbite.fromFile('song.mp3');
+/// print(audio.info.duration);
+/// final peaks = audio.waveform(buckets: 200);
+/// audio.dispose();
+/// ```
+final class Frustbite {
+  Frustbite._(this._backend);
+
+  final BackendAudio _backend;
+  bool _isDisposed = false;
+  AudioInfo? _info;
+  AudioTags? _tags;
+  AudioCover? _cover;
+  bool _coverRead = false;
+
   /// ABI version of the loaded native library, verified against this package.
-  static int get abiVersion {
-    final actual = bindings.frustbite_abi_version();
-    checkFrustbiteAbi(actual);
-    return actual;
+  static int get abiVersion => BackendAudio.abiVersion;
+
+  /// Loads the WASM module on web; a no-op on native platforms.
+  static Future<void> initialize({Uri? wasmUri, Uint8List? wasmBytes}) =>
+      BackendAudio.initialize(wasmUri: wasmUri, wasmBytes: wasmBytes);
+
+  /// Opens audio from [bytes]. The container is detected unless [format] is
+  /// given.
+  ///
+  /// Throws [DecodingException] if [bytes] is empty or corrupt, and
+  /// [UnsupportedFormatException] if the format is not supported.
+  factory Frustbite.fromMemory(Uint8List bytes, {AudioContainer? format}) {
+    if (bytes.isEmpty) throw DecodingException('input buffer is empty');
+    return Frustbite._(BackendAudio.fromMemory(bytes, format));
+  }
+
+  /// Opens audio from the file at [path].
+  ///
+  /// Throws [InvalidPathException] if the path is empty or missing. Throws
+  /// [UnsupportedError] on web; use [Frustbite.fromMemory] instead.
+  factory Frustbite.fromFile(String path, {AudioContainer? format}) {
+    if (path.trim().isEmpty) throw InvalidPathException('path is empty');
+    return Frustbite._(BackendAudio.fromFile(path, format));
+  }
+
+  /// Whether [dispose] has been called.
+  bool get isDisposed => _isDisposed;
+
+  void _checkDisposed() {
+    if (_isDisposed) throw StateError('Frustbite has been disposed');
+  }
+
+  /// Stream description (cached).
+  AudioInfo get info {
+    _checkDisposed();
+    return _info ??= _backend.info();
+  }
+
+  /// Metadata tags (cached). Empty when the source has none.
+  AudioTags get tags {
+    _checkDisposed();
+    return _tags ??= _backend.tags();
+  }
+
+  /// Embedded cover art (cached), or null.
+  AudioCover? get cover {
+    _checkDisposed();
+    if (!_coverRead) {
+      _cover = _backend.cover();
+      _coverRead = true;
+    }
+    return _cover;
+  }
+
+  /// Summarises the source into [buckets] amplitudes in [0, 1].
+  ///
+  /// Decodes the whole source; heavy for long files. Throws
+  /// [InvalidParameterException] unless [buckets] is in 1..100000.
+  Waveform waveform({
+    int buckets = 100,
+    WaveformMode mode = WaveformMode.peak,
+    bool perChannel = false,
+  }) {
+    _checkDisposed();
+    return _backend.waveform(buckets, mode, perChannel);
+  }
+
+  /// Decodes the whole source to interleaved f32 PCM. Heavy for long files.
+  AudioPcm decode() {
+    _checkDisposed();
+    return _backend.decode();
+  }
+
+  /// Releases the native resources. Safe to call more than once.
+  void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
+    _backend.dispose();
   }
 }

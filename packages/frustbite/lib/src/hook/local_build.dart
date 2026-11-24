@@ -2,16 +2,29 @@ import 'package:hooks/hooks.dart';
 import 'package:native_toolchain_rust/native_toolchain_rust.dart';
 
 /// Cargo features of the native crate, one per codec.
-const supportedFormats = {'aac', 'alac', 'flac', 'mp3', 'opus', 'vorbis', 'wav'};
+const supportedFormats = {
+  'aac',
+  'alac',
+  'flac',
+  'mp3',
+  'opus',
+  'vorbis',
+  'wav',
+};
 
 /// Reads the `formats` user define, or returns `null` when it is not set.
 List<String>? readFormats(HookInput input) {
   final value = input.userDefines['formats'];
   if (value == null) return null;
   if (value is! List || value.any((format) => format is! String)) {
-    throw FormatException('frustbite `formats` must be a list of format names, got: $value');
+    throw FormatException(
+      'frustbite `formats` must be a list of format names, got: $value',
+    );
   }
-  final formats = value.cast<String>().map((format) => format.toLowerCase()).toSet();
+  final formats = value
+      .cast<String>()
+      .map((format) => format.toLowerCase())
+      .toSet();
   final unknown = formats.difference(supportedFormats);
   if (unknown.isNotEmpty) {
     throw FormatException(
@@ -20,7 +33,9 @@ List<String>? readFormats(HookInput input) {
     );
   }
   if (formats.isEmpty) {
-    throw const FormatException('frustbite `formats` must enable at least one format');
+    throw const FormatException(
+      'frustbite `formats` must enable at least one format',
+    );
   }
   return formats.toList()..sort();
 }
