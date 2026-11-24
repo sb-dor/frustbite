@@ -1,0 +1,14 @@
+# Test audio fixtures and the prebuilt test module are not needed by users.
+test/fixtures/
+test/frustbite.wasm
+
+# Developer tooling.
+tool/
+
+# Build artifacts.
+build/
+libs/
+target/
+.dart_tool/
+
+# native/include (the C header) is intentionally not excluded.

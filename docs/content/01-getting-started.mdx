@@ -1,0 +1,93 @@
+---
+title: Getting started
+description: Install Frustbite and read your first audio file.
+---
+
+## Install Frustbite
+
+```yaml title="pubspec.yaml"
+dependencies:
+  frustbite: ^0.0.1
+```
+
+```bash
+dart pub get
+```
+
+Frustbite's build hook downloads the prebuilt native binary for the current
+platform from the matching GitHub Release and verifies its SHA-256 hash. The
+package and the binary must have the same ABI version, which the package checks
+at load time.
+
+On Linux the prebuilt binaries need glibc 2.35 or newer (Ubuntu 22.04 or
+later, Debian 12 or later).
+
+## Open a source
+
+Open a path on native platforms:
+
+```dart
+final audio = Frustbite.fromFile('song.mp3');
+```
+
+Or open bytes on every platform, including the web:
+
+```dart
+final bytes = await File('song.mp3').readAsBytes();
+final audio = Frustbite.fromMemory(bytes);
+```
+
+The container is detected from the content. The optional `format:` argument
+(an `AudioContainer`) is only an advisory hint: content detection wins, and a
+wrong hint is not an error.
+
+Always release the native resources when you are done:
+
+```dart
+try {
+  // use audio
+} finally {
+  audio.dispose();
+}
+```
+
+Finalizers are only a safety net. Using a disposed instance throws
+`StateError`.
+
+## Read the stream info
+
+```dart
+final info = audio.info;
+print(info.container); // AudioContainer.mp3
+print(info.codec); // AudioCodec.mp3
+print(info.sampleRate); // 44100
+print(info.channels); // 2
+print(info.duration); // 0:03:00.000000
+```
+
+`info`, `tags` and `cover` are cached after the first read.
+
+## Handle errors
+
+Every engine error is a `FrustbiteException`:
+
+```dart
+try {
+  final audio = Frustbite.fromFile(path);
+  // ...
+} on UnsupportedFormatException {
+  // not an audio file, or a format that is not supported
+} on DecodingException {
+  // empty or corrupt data
+} on InvalidPathException {
+  // empty or missing path
+} on FrustbiteException catch (e) {
+  print(e.code);
+}
+```
+
+## Next steps
+
+See [Reading audio](/reading-audio) for tags, cover art, waveforms and
+decoding, [WebAssembly](/webassembly) for browser setup, and
+[Formats and build](/formats-and-build) for what is supported.

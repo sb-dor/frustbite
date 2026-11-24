@@ -1,0 +1,77 @@
+---
+title: Formats and build
+description: Supported formats, known limitations and build options.
+---
+
+## Supported formats
+
+| Codec | Containers |
+| --- | --- |
+| MP3 | MP3 |
+| AAC-LC | MP4/M4A, ADTS |
+| ALAC | MP4/M4A |
+| FLAC | FLAC |
+| Vorbis | Ogg |
+| Opus | Ogg, WebM/Matroska |
+| PCM | WAV |
+
+Stage 1 only reads audio. All formats are decoded to `f32` PCM.
+
+## Known limitations
+
+- **HE-AAC.** HE-AAC and HE-AACv2 are unsupported. When SBR is signalled
+  explicitly, opening the file throws `UnsupportedFormatException`. Implicit
+  SBR and ADTS HE-AAC cannot be detected when the file is opened, so such a
+  file may decode as its AAC-LC core.
+- **Opus in MP4.** Opus in an MP4 container is unsupported in stage 1. Opus in
+  Ogg and in WebM/Matroska is supported.
+- **WebM tags.** WebM gives no tags, because the tag library has no Matroska
+  support. The reported duration may include up to one packet of tail padding.
+- **m4a frame count.** For m4a files, `totalFrames` includes the 1024-frame
+  AAC priming.
+- **The `format:` hint is advisory.** Content detection wins, and a wrong hint
+  is not an error.
+- **Web.** See [WebAssembly](/webassembly): you supply `frustbite.wasm`,
+  `*Async` methods still run on the main thread, and under dart2wasm with a
+  CSP that forbids `unsafe-eval` a Rust panic escapes as a raw JavaScript
+  error.
+
+## How the native library is obtained
+
+By default the build hook downloads the prebuilt library for your target from
+the GitHub Release matching the package version, and verifies it against a
+SHA-256 hash that ships inside the package. Twelve targets are published:
+Android (armv7, arm64, x86_64), iOS (device, and simulator on arm64 and x86_64),
+Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows (x86_64, arm64).
+
+Linux binaries need glibc 2.35 or newer.
+
+## Build from source
+
+Set the `local_build` user define to compile the crate with Cargo instead of
+downloading it. This needs a Rust toolchain. In your application's
+`pubspec.yaml`:
+
+```yaml
+hooks:
+  user_defines:
+    frustbite:
+      local_build: true
+```
+
+## Reduce the binary size with `formats`
+
+By default every codec is compiled in. The `formats` user define compiles only
+the codecs you list, which makes the library smaller. Setting it implies a
+source build, so a Rust toolchain is required.
+
+```yaml
+hooks:
+  user_defines:
+    frustbite:
+      formats: [mp3, wav]
+```
+
+Supported names: `aac`, `alac`, `flac`, `mp3`, `opus`, `vorbis`, `wav`. An
+unknown name or an empty list fails the build. A source whose codec is not
+compiled in throws `UnsupportedFormatException` when it is opened.

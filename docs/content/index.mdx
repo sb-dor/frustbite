@@ -1,0 +1,61 @@
+---
+title: Frustbite
+description: Read audio metadata, waveforms and PCM from Dart, powered by Rust.
+sidebar:
+  label: Introduction
+  order: 0
+---
+
+Frustbite opens an audio file or a byte buffer and tells you what is inside:
+codec and stream info, tags, cover art, a waveform ready to draw, or the fully
+decoded PCM. The work is done by a Rust crate through FFI and Dart build hooks,
+or through WebAssembly in the browser. The Dart API is pure Dart.
+
+:::note
+Stage 1 is read-only. Frustbite supports Android, iOS, Linux, macOS, Windows
+and the web. Editing, encoding and a CLI are on the roadmap.
+:::
+
+## Install
+
+Add Frustbite to your `pubspec.yaml`:
+
+```yaml
+dependencies:
+  frustbite: ^0.0.1
+```
+
+Native binaries are downloaded automatically by Dart build hooks.
+
+## Read an audio file
+
+```dart
+import 'package:frustbite/frustbite.dart';
+
+final audio = Frustbite.fromFile('song.mp3');
+try {
+  print(audio.info);
+  print(audio.tags.title);
+  final peaks = audio.waveform(buckets: 200);
+  print(peaks.channel(0).length);
+} finally {
+  audio.dispose();
+}
+```
+
+## What next?
+
+<CardGroup>
+  <Card title="Getting started" href="/getting-started">
+    Install, open a source and read its info.
+  </Card>
+  <Card title="Reading audio" href="/reading-audio">
+    Info, tags, cover art, waveforms, decoding and async variants.
+  </Card>
+  <Card title="WebAssembly" href="/webassembly">
+    Use the byte-based API in browser applications.
+  </Card>
+  <Card title="Formats and build" href="/formats-and-build">
+    Supported formats, known limitations and the build options.
+  </Card>
+</CardGroup>

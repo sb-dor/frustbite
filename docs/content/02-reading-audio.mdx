@@ -1,0 +1,107 @@
+---
+title: Reading audio
+description: Info, tags, cover art, waveforms, decoding and async variants.
+---
+
+## Info
+
+`audio.info` returns an `AudioInfo`:
+
+| Field | Meaning |
+| --- | --- |
+| `container`, `codec` | `AudioContainer` and `AudioCodec` enum values |
+| `sampleRate` | Sample rate in Hz |
+| `channels` | Channel count |
+| `bitsPerSample` | For PCM, FLAC and ALAC; `null` otherwise |
+| `bitrate` | Average bits per second; `null` when unknown |
+| `totalFrames` | Playable frames per channel |
+| `duration` | Total duration |
+
+## Tags and cover art
+
+```dart
+final tags = audio.tags;
+print('${tags.artist} - ${tags.title} (${tags.year})');
+
+final cover = audio.cover;
+if (cover != null) {
+  // cover.data is the encoded image; cover.mimeType is e.g. image/png.
+  File('cover.png').writeAsBytesSync(cover.data);
+}
+```
+
+`AudioTags` has `title`, `artist`, `album`, `albumArtist`, `genre`, `comment`,
+`year`, `track`, `trackTotal`, `disc` and `discTotal`. Missing values are
+`null`, and a source without tags gives an empty `AudioTags`. `cover` is
+`null` when there is no embedded picture.
+
+WebM files give no tags (see [Formats and build](/formats-and-build)).
+
+## Waveform
+
+`waveform` summarises the source into amplitudes in `[0, 1]`. The decode is
+streaming, so memory stays bounded: a one-hour mp3 stays within 50 MB of
+resident memory above the baseline.
+
+```dart
+final waveform = audio.waveform(
+  buckets: 200, // 1..100000, default 100
+  mode: WaveformMode.peak, // or WaveformMode.rms
+  perChannel: false, // merge channels
+);
+final values = waveform.channel(0); // Float32List of 200 values
+```
+
+With `perChannel: true` the data holds all buckets of channel 0, then channel
+1, and so on, and `waveform.channel(i)` returns one channel as a view.
+`waveform.normalized()` returns a copy scaled so the maximum is 1.
+
+An invalid `buckets` value throws `InvalidParameterException`.
+
+## Decode to PCM
+
+```dart
+final pcm = audio.decode();
+print(pcm.sampleRate);
+print(pcm.channels);
+print(pcm.frames);
+print(pcm.duration);
+// pcm.samples is an interleaved Float32List.
+```
+
+`decode` returns the whole source in memory, so it is heavy for long files.
+Prefer `waveform` when you only need to draw.
+
+## Async variants
+
+`waveformAsync` and `decodeAsync` take the same arguments as their synchronous
+counterparts:
+
+```dart
+final waveform = await audio.waveformAsync(buckets: 200);
+final pcm = await audio.decodeAsync();
+```
+
+On native platforms they run on a background isolate, so the UI isolate is not
+blocked. On the web they only defer the work to a later event-loop turn; it
+still runs on the main thread (see [WebAssembly](/webassembly)).
+
+`dispose` throws `StateError` while an async call is in flight.
+
+## Performance
+
+Frustbite is compared with other Dart audio packages in the repository's
+`packages/benchmark` (Apple M3 Pro, 180 s of 44.1 kHz stereo):
+
+| Operation | Frustbite | Baseline | Speedup |
+| --- | --- | --- | --- |
+| decode mp3 | 95.4 ms | `audio_decode`: 83.2 ms | 0.87x |
+| decode mp3 | 95.4 ms | `glint_audio_pure` (pure Dart): 7955.9 ms | 83.39x |
+| decode Ogg Vorbis | 106.7 ms | `audio_decode`: 124.7 ms | 1.17x |
+| decode WAV | 24.9 ms | `wav` (pure Dart): 225.6 ms | 9.05x |
+| waveform mp3, 1000 buckets | 93.1 ms | `audio_decode` + Dart loop: 88.7 ms | 0.95x |
+| tags + cover (mp3) | 0.10 ms | `audio_metadata_reader`: 0.09 ms | 0.94x |
+
+Against the native `audio_decode`, Frustbite is roughly on par and slower on
+mp3 decode. Against pure-Dart decoders the gap is large. Single machine,
+single synthetic input; real files may differ.

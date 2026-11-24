@@ -1,0 +1,72 @@
+---
+title: WebAssembly
+description: Load Frustbite and read audio bytes in browser applications.
+---
+
+Browser builds use the same Dart API backed by `frustbite.wasm`.
+
+## Add the module
+
+Download `frustbite.wasm` from the GitHub Release matching your Frustbite
+package version and place it in the application's web root. Frustbite does not
+bundle it for you.
+
+Initialize Frustbite before opening a source:
+
+```dart
+await Frustbite.initialize();
+
+final audio = Frustbite.fromMemory(bytes);
+try {
+  final waveform = audio.waveform(buckets: 200);
+} finally {
+  audio.dispose();
+}
+```
+
+By default, Frustbite fetches `frustbite.wasm` relative to the page. You can
+supply a different URL or provide the module bytes directly:
+
+```dart
+await Frustbite.initialize(wasmUri: Uri.parse('/assets/frustbite.wasm'));
+
+// Or:
+await Frustbite.initialize(wasmBytes: wasmBytes);
+```
+
+`initialize` is a no-op on native platforms, so you can call it
+unconditionally. A failed load can be retried. If the module does not match the
+package's ABI, `initialize` throws `StateError`.
+
+To build the module yourself, run `dart tool/build_wasm.dart <output.wasm>`
+from `packages/frustbite`.
+
+## Browser API limits
+
+- Use `fromMemory`. `fromFile` always throws `UnsupportedError` on the web
+  because browsers do not expose file paths.
+- The `*Async` methods (`waveformAsync`, `decodeAsync`) only defer the work to a
+  later event-loop turn. wasm memory cannot be shared with a worker isolate, so
+  the work still runs on the main thread and blocks it for long files. Decode
+  long files sparingly, or prefer `waveform`, which streams.
+- After an engine trap (reported as `UnknownFrustbiteException`), every later
+  call throws `StateError` until you call `Frustbite.initialize()` again.
+  Objects opened before the trap stay unusable.
+
+Frustbite supports both JavaScript-compiled and Dart/Flutter Wasm
+(dart2wasm) builds.
+
+## Content Security Policy
+
+On pages whose CSP forbids `unsafe-eval`, a Rust panic inside wasm under
+dart2wasm escapes as a raw JavaScript error instead of
+`UnknownFrustbiteException`. Panics are not expected in normal use, but code
+that catches `FrustbiteException` will not see this one. If your page has such
+a CSP, treat unexpected JavaScript errors from Frustbite calls as engine
+failures.
+
+## Flutter
+
+In a Flutter web app, copy `frustbite.wasm` into `web/` and call
+`await Frustbite.initialize()` before `runApp`. The repository's showcase app
+does exactly this.
