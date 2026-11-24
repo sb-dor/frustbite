@@ -206,7 +206,9 @@ jobs:
       - name: Build
         env:
           FRUSTBITE_ZIGBUILD: ${{ startsWith(matrix.target, 'linux_') && '1' || '0' }}
-        run: dart tool/build.dart libs ${{ matrix.target }}
+        # --release-paths remaps the runner's home, rustup, cargo and checkout
+        # paths, so the published binaries carry none of them.
+        run: dart tool/build.dart --release-paths libs ${{ matrix.target }}
 
       # Git Bash on every runner OS. Windows needs llvm-objdump (preinstalled
       # with LLVM on windows-latest, C:\Program Files\LLVM\bin) or dumpbin.
