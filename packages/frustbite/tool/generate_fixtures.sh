@@ -5,10 +5,18 @@
 set -euo pipefail
 
 FFMPEG="${FFMPEG:-ffmpeg}"
+for tool in "$FFMPEG" ffprobe afconvert python3; do
+  command -v "$tool" >/dev/null 2>&1 || {
+    echo "error: required tool '$tool' not found in PATH" >&2
+    exit 1
+  }
+done
 here="$(cd "$(dirname "$0")" && pwd)"
 out="$here/../test/fixtures"
 mkdir -p "$out"
 cd "$out"
+
+trap 'rm -f cover.png' EXIT
 
 ff() { "$FFMPEG" -hide_banner -loglevel error -y "$@"; }
 
@@ -20,6 +28,17 @@ TAGS=(-metadata title="frustbite tone" -metadata artist=frustbite
 
 # 64x64 blue PNG cover.
 ff -f lavfi -i "color=c=blue:s=64x64:d=1" -frames:v 1 cover.png
+
+# Vorbis-comment cover: base64 of a FLAC PICTURE block (front cover, PNG).
+PIC_B64="$(python3 -I - <<'PY'
+import base64, struct
+d = open("cover.png", "rb").read()
+m = b"image/png"
+b = (struct.pack(">II", 3, len(m)) + m + struct.pack(">I", 0)
+     + struct.pack(">IIIII", 64, 64, 24, 0, len(d)) + d)
+print(base64.b64encode(b).decode())
+PY
+)"
 
 COVER=(-i cover.png -map 0:a -map 1:v -disposition:v:0 attached_pic)
 
@@ -63,13 +82,13 @@ ff -f lavfi -i "anullsrc=r=44100:cl=stereo" -t 1 -c:a flac silence.flac
 
 # Ogg Vorbis (libvorbis if present, else the native experimental encoder)
 if "$FFMPEG" -hide_banner -encoders 2>/dev/null | grep -q libvorbis; then
-  ff "${SRC[@]}" "${TAGS[@]}" -c:a libvorbis -q:a 3 tone.ogg
+  ff "${SRC[@]}" "${TAGS[@]}" -metadata METADATA_BLOCK_PICTURE="$PIC_B64" -c:a libvorbis -q:a 3 tone.ogg
 else
-  ff "${SRC[@]}" "${TAGS[@]}" -c:a vorbis -strict -2 -b:a 128k tone.ogg
+  ff "${SRC[@]}" "${TAGS[@]}" -metadata METADATA_BLOCK_PICTURE="$PIC_B64" -c:a vorbis -strict -2 -b:a 128k tone.ogg
 fi
 
 # Opus in Ogg (48 kHz)
-ff "${SRC[@]}" "${TAGS[@]}" -ar 48000 -c:a libopus -b:a 96k tone.opus
+ff "${SRC[@]}" "${TAGS[@]}" -metadata METADATA_BLOCK_PICTURE="$PIC_B64" -ar 48000 -c:a libopus -b:a 96k tone.opus
 
 # Opus in WebM, written to a pipe so the muxer cannot seek back and fill in
 # the Duration element (like MediaRecorder output).
@@ -83,5 +102,4 @@ random.seed(42)
 open("corrupt.bin", "wb").write(bytes(random.getrandbits(8) for _ in range(4096)))
 '
 
-rm -f cover.png
 echo "fixtures written to $out"

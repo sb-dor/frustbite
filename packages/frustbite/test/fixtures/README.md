@@ -34,5 +34,7 @@ encoder (`vorbis -strict -2`) is used when `libvorbis` is missing.
 | `corrupt.bin` | 4 KiB of random bytes, `random.seed(42)` |
 
 Tagged files carry title `frustbite tone`, artist `frustbite`, album
-`fixtures`, year 2026, track 1/1, genre `Test`. MP3, M4A and FLAC also carry
-a 64x64 blue PNG cover.
+`fixtures`, year 2026, track 1/1, genre `Test`. MP3, M4A, FLAC, Ogg Vorbis
+and Opus also carry a 64x64 blue PNG cover (attached picture; for Ogg/Opus a
+`METADATA_BLOCK_PICTURE` Vorbis comment). `tone_he.m4a`, `tone_alac.m4a`,
+`tone_vbr_noxing.mp3` and `tone.webm` are untagged.
