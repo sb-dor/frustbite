@@ -22,13 +22,17 @@
 //     `resolution: workspace` is dropped from pubspec.yaml, which the staged
 //     copy, outside the workspace, cannot use;
 //   - from native/, the files `cargo build --locked` needs, as `rust/`:
-//     Cargo.toml, Cargo.lock, build.rs, rust-toolchain.toml, src/** and
+//     Cargo.toml (plus an empty `[workspace]` table if it has none, so a pub
+//     cache under someone's cargo workspace still builds), Cargo.lock,
+//     build.rs, src/**, a trimmed `rust-toolchain.toml` (the same channel,
+//     `profile = "minimal"`, no components or targets: the repository's holds
+//     the CI toolchain, clippy, rustfmt and 13 targets, hundreds of MB that a
+//     source build from pub.dev must not install) and
 //     `cargo-config.toml`: the Windows `+crt-static` tables of
 //     `.cargo/config.toml`. pub leaves hidden files out of the archive, so
 //     the hook passes that visible copy to cargo with `--config`. Not
 //     `target/`, `tests/`, `tool/`, cbindgen.toml (the header is generated
-//     by hand, not by the build), the research notes or the config's local
-//     Linux cross-linker, which would break a native arm64 Linux build;
+//     by hand, not by the build) or the research notes;
 //   - the libraries as `prebuilt/<os>-<arch>[-sim]/<one file name>`, and
 //     `prebuilt/checksums.json` (sorted keys, `<dir>/<file>` to sha256).
 //
@@ -54,12 +58,10 @@ const _packageExcludes = [
 ];
 
 /// The files of native/ the staged `rust/` holds (`src/` as a prefix).
-const _crateFiles = {
-  'Cargo.toml',
-  'Cargo.lock',
-  'build.rs',
-  'rust-toolchain.toml',
-};
+const _crateFiles = {'Cargo.toml', 'Cargo.lock', 'build.rs'};
+
+/// Written trimmed, not copied: see [stagedToolchain].
+const _toolchainFile = 'rust-toolchain.toml';
 
 /// The tracked config the staged `cargo-config.toml` is made from.
 const _cargoConfig = '.cargo/config.toml';
@@ -168,7 +170,7 @@ Future<Map<String, String>> stagePackage({
 
   // 2. The crate.
   final crate = await _gitFiles(nativeDir);
-  for (final required in _crateFiles) {
+  for (final required in [..._crateFiles, _toolchainFile]) {
     if (!crate.contains(required)) {
       throw StageException('native/$required is not tracked by git');
     }
@@ -191,6 +193,13 @@ Future<Map<String, String>> stagePackage({
       );
     }
   }
+  final manifest = File(p.join(target.path, 'rust', 'Cargo.toml'));
+  manifest.writeAsStringSync(stagedManifest(manifest.readAsStringSync()));
+  File(p.join(target.path, 'rust', _toolchainFile)).writeAsStringSync(
+    stagedToolchain(
+      File(p.join(nativeDir.path, _toolchainFile)).readAsStringSync(),
+    ),
+  );
 
   // 3. The libraries and 4. their checksums.
   final checksums = <String, String>{};
@@ -208,10 +217,36 @@ Future<Map<String, String>> stagePackage({
   return checksums;
 }
 
+/// The `rust-toolchain.toml` of the staged package, from the text of
+/// `native/rust-toolchain.toml`: the same `channel`, `profile = "minimal"`, no
+/// components and no targets. The repository's file lists everything CI needs
+/// (clippy, rustfmt, wasm, Android, iOS, ...), and rustup would install all of
+/// it for a source build from pub.dev. The hook adds the one target it needs.
+String stagedToolchain(String toolchain) {
+  final channel = rustToolchainChannel(toolchain);
+  if (channel == null) {
+    throw StageException('native/$_toolchainFile has no `channel`');
+  }
+  return '# Staged from native/$_toolchainFile by tool/stage_package.dart: the '
+      'pinned channel\n# only. The hook installs the one target it builds '
+      'for.\n[toolchain]\nchannel = "$channel"\nprofile = "minimal"\n';
+}
+
+/// The Cargo.toml text for the staged crate: an empty `[workspace]` table is
+/// appended when there is none. Without it cargo walks up from `rust/` and
+/// refuses to build a crate that sits under someone else's workspace (a pub
+/// cache inside a monorepo).
+String stagedManifest(String manifest) {
+  final hasWorkspace = const LineSplitter()
+      .convert(manifest)
+      .any((line) => line.trim().startsWith('[workspace'));
+  if (hasWorkspace) return manifest;
+  return '${manifest.trimRight()}\n\n[workspace]\n';
+}
+
 /// The `cargo-config.toml` of the staged package, from the text of
 /// `native/.cargo/config.toml`: its Windows MSVC tables (with the comments
-/// above them) and nothing else. The other tables are for local use in the
-/// repository (a cross-linker for aarch64 Linux).
+/// above them) and nothing else.
 String stagedConfig(String config) {
   final tables = <List<String>>[[]];
   for (final line in const LineSplitter().convert(config)) {

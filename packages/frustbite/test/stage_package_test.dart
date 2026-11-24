@@ -8,6 +8,8 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
+import 'package:frustbite/src/hook/resolve.dart';
+
 import '../tool/check_pubignore.dart';
 import '../tool/stage_package.dart';
 
@@ -162,6 +164,57 @@ void main() {
     expect(RegExp('\\+crt-static').allMatches(config), hasLength(2));
     expect(config, isNot(contains('linker')));
     expect(config, isNot(contains('linux')));
+  });
+
+  test('the staged toolchain is minimal: channel only', () async {
+    await stage(fakeBuild());
+    final toolchain = File(staged('rust/rust-toolchain.toml'));
+    final text = toolchain.readAsStringSync();
+    final repo = File(
+      p.join(packageDir.parent.parent.path, 'native', 'rust-toolchain.toml'),
+    ).readAsStringSync();
+    expect(
+      repo,
+      contains('components'),
+      reason: 'the repo file is the full one',
+    );
+    expect(rustToolchainChannel(text), rustToolchainChannel(repo));
+    expect(text, contains('profile = "minimal"'));
+    expect(text, isNot(contains('components')));
+    expect(text, isNot(contains('targets')));
+    expect(text, isNot(contains('wasm32')));
+    expect(text, isNot(contains('clippy')));
+  });
+
+  test('stagedToolchain needs a channel', () {
+    expect(
+      () => stagedToolchain('[toolchain]\ncomponents = []\n'),
+      throwsA(isA<StageException>()),
+    );
+  });
+
+  test('the staged manifest gets an empty [workspace] table', () async {
+    await stage(fakeBuild());
+    final repo = File(
+      p.join(packageDir.parent.parent.path, 'native', 'Cargo.toml'),
+    ).readAsStringSync();
+    expect(repo, isNot(contains('[workspace')));
+    final text = File(staged('rust/Cargo.toml')).readAsStringSync();
+    expect(text, startsWith(repo.trimRight()));
+    expect(text.trimRight(), endsWith('\n[workspace]'));
+    expect(
+      RegExp(r'^\[workspace\]', multiLine: true).allMatches(text),
+      hasLength(1),
+    );
+  });
+
+  test('stagedManifest keeps an existing workspace table', () {
+    const manifest = '[package]\nname = "x"\n\n[workspace]\nmembers = []\n';
+    expect(stagedManifest(manifest), manifest);
+    expect(
+      stagedManifest('[package]\nname = "x"'),
+      endsWith('\n\n[workspace]\n'),
+    );
   });
 
   group('check_pubignore', () {
