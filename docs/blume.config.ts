@@ -11,11 +11,11 @@ export default defineConfig({
     repo: "frustbite",
     dir: "docs",
   },
-  ai: {
+  agents: {
     llmsTxt: true,
   },
+  // Blume 2: `{ site, base }` is the static build for any host (GitHub Pages).
   deployment: {
-    output: "static",
     site: "https://sb-dor.github.io",
     base: "/frustbite",
   },
