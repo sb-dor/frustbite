@@ -39,7 +39,9 @@ unconditionally. A failed load can be retried. If the module does not match the
 package's ABI, `initialize` throws `StateError`.
 
 To build the module yourself, run `dart tool/build_wasm.dart <output.wasm>`
-from `packages/frustbite`.
+from `packages/frustbite` in a git checkout of the repository. This does not
+work from the pub.dev package, because `tool/` is not published; pub.dev users
+download `frustbite.wasm` from the release.
 
 ## Browser API limits
 

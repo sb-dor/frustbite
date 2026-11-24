@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 import 'package:native_toolchain_rust/native_toolchain_rust.dart';
@@ -41,6 +43,34 @@ List<String>? readFormats(HookInput input) {
   return formats.toList()..sort();
 }
 
+/// Path of the Rust crate relative to the package root. It lives outside the
+/// package directory, so it only exists in a checkout of the repository.
+const cratePath = '../../native';
+
+/// Resolves the Rust crate directory relative to [packageRoot].
+///
+/// The crate is not part of the published package, so source builds only work
+/// from a git dependency (pub clones the whole repository). Throws a
+/// [StateError] with instructions when the crate is missing.
+Directory resolveCrateDir(Uri packageRoot) {
+  final dir = Directory.fromUri(packageRoot.resolve('$cratePath/'));
+  if (File.fromUri(dir.uri.resolve('Cargo.toml')).existsSync()) return dir;
+  throw StateError(
+    'frustbite: `local_build` and `formats` build the Rust crate from source, '
+    'but it was not found at ${dir.path} (no Cargo.toml). The crate is not '
+    'included in the package published on pub.dev, so source builds need a '
+    'git dependency:\n'
+    '\n'
+    'dependencies:\n'
+    '  frustbite:\n'
+    '    git:\n'
+    '      url: https://github.com/sb-dor/frustbite\n'
+    '      path: packages/frustbite\n'
+    '\n'
+    'Without user defines, the build hook downloads prebuilt binaries instead.',
+  );
+}
+
 /// Builds the native crate from source. When [formats] is set, only those
 /// codecs are compiled in; otherwise all [supportedFormats] are.
 Future<void> runLocalBuild(
@@ -48,9 +78,10 @@ Future<void> runLocalBuild(
   BuildOutputBuilder output, {
   List<String>? formats,
 }) async {
+  resolveCrateDir(input.packageRoot);
   final rustBuilder = RustBuilder(
     assetName: 'src/bindings/bindings.dart',
-    cratePath: '../../native',
+    cratePath: cratePath,
     enableDefaultFeatures: formats == null,
     features: formats ?? const [],
     // native_toolchain_rust does not set deployment targets, so pass the

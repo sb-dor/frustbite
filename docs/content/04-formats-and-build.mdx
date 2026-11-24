@@ -59,11 +59,30 @@ hooks:
       local_build: true
 ```
 
+:::warning
+Source builds work only with a git dependency. The Rust crate is not included
+in the package published on pub.dev, while a git dependency makes pub clone the
+whole repository:
+
+```yaml
+dependencies:
+  frustbite:
+    git:
+      url: https://github.com/sb-dor/frustbite
+      path: packages/frustbite
+```
+
+Without it, the build fails with a `StateError` that explains this. With no
+user defines the hook downloads prebuilt binaries, which works with the pub.dev
+package.
+:::
+
 ## Reduce the binary size with `formats`
 
 By default every codec is compiled in. The `formats` user define compiles only
 the codecs you list, which makes the library smaller. Setting it implies a
-source build, so a Rust toolchain is required.
+source build, so a Rust toolchain and the git dependency described above are
+required.
 
 ```yaml
 hooks:

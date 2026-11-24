@@ -10,5 +10,3 @@ build/
 libs/
 target/
 .dart_tool/
-
-# native/include (the C header) is intentionally not excluded.

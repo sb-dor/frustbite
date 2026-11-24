@@ -31,6 +31,36 @@ BuildInput _inputWith(Map<String, Object?> defines) {
 }
 
 void main() {
+  group('resolveCrateDir', () {
+    test('finds the crate when Cargo.toml exists', () {
+      final root = Directory.systemTemp.createTempSync('frustbite_crate_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final package = Directory('${root.path}/packages/frustbite')
+        ..createSync(recursive: true);
+      Directory('${root.path}/native').createSync();
+      File('${root.path}/native/Cargo.toml').writeAsStringSync('');
+      final dir = resolveCrateDir(package.uri);
+      expect(File('${dir.path}/Cargo.toml').existsSync(), isTrue);
+    });
+
+    test('throws a StateError explaining the git dependency', () {
+      final root = Directory.systemTemp.createTempSync('frustbite_nocrate_');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final package = Directory('${root.path}/packages/frustbite')
+        ..createSync(recursive: true);
+      expect(
+        () => resolveCrateDir(package.uri),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('git:'), contains('prebuilt binaries')),
+          ),
+        ),
+      );
+    });
+  });
+
   group('readFormats', () {
     test('accepts ["mp3","OPUS"] and normalises', () {
       expect(

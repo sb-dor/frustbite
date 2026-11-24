@@ -116,6 +116,21 @@ hooks:
       formats: [mp3, wav]
 ```
 
+Source builds work **only with a git dependency**: the Rust crate is not
+included in the package on pub.dev, and pub clones the whole repository for a
+git dependency. Without it the build fails with a `StateError` that says so.
+
+```yaml
+dependencies:
+  frustbite:
+    git:
+      url: https://github.com/sb-dor/frustbite
+      path: packages/frustbite
+```
+
+With no user defines the hook downloads prebuilt binaries, which works with the
+pub.dev package.
+
 ## Performance
 
 On an Apple M3 Pro, 180 s of 44.1 kHz stereo mp3 decodes in 95 ms. That is
