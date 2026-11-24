@@ -48,11 +48,11 @@ external int frustbite_decode(
 @ffi.Native<ffi.Void Function(ffi.Pointer<FrustbiteAudio>)>()
 external void frustbite_free(ffi.Pointer<FrustbiteAudio> audio);
 
-/// Releases a buffer from `frustbite_decode`. `len` must be the `*out_len` it returned.
+/// Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the `*out_len` it returned.
 /// Passing null is a no-op.
 ///
 /// # Safety
-/// `ptr` must be null or a buffer returned by `frustbite_decode` with the same `len`, not yet
+/// `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with the same `len`, not yet
 /// freed.
 @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Float>, ffi.Size)>(isLeaf: true)
 external void frustbite_free_f32(ffi.Pointer<ffi.Float> ptr, int len);
@@ -120,6 +120,34 @@ external int frustbite_open_memory(
 @ffi.Native<ffi.Size Function(ffi.Pointer<FrustbiteAudio>)>(isLeaf: true)
 external int frustbite_source_byte_length(ffi.Pointer<FrustbiteAudio> audio);
 
+/// Summarises the whole source into `buckets` amplitudes in [0, 1] for drawing a waveform.
+/// `buckets` must be 1..=100000 and `mode` a `FrustbiteWaveformMode` value, else
+/// `InvalidParameter`. On success `*out` receives `*out_len` floats, channel-major (all buckets
+/// of channel 0, then channel 1, ...; one merged series unless `per_channel`), to release with
+/// `frustbite_free_f32` using the same length. Values are absolute full scale, not normalised.
+/// Heavy (decodes the whole source): call it off the UI thread.
+///
+/// # Safety
+/// `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<FrustbiteAudio>,
+    ffi.Uint32,
+    ffi.Uint32,
+    ffi.Bool,
+    ffi.Pointer<ffi.Pointer<ffi.Float>>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external int frustbite_waveform(
+  ffi.Pointer<FrustbiteAudio> audio,
+  int buckets,
+  int mode,
+  bool per_channel,
+  ffi.Pointer<ffi.Pointer<ffi.Float>> out,
+  ffi.Pointer<ffi.Size> out_len,
+);
+
 const int FRUSTBITE_ABI_VERSION = 1;
 
 const int FRUSTBITE_FORMAT_DETECT = 4294967295;
@@ -153,7 +181,10 @@ final class FrustbiteAudioInfo extends ffi.Struct {
   @ffi.Uint32()
   external int bitrate;
 
-  /// Playable frames per channel, after encoder delay and padding.
+  /// Playable frames per channel, after encoder delay and padding. Exception: for AAC in
+  /// MP4 (m4a) it comes from the mdhd duration without the edit list, so it includes the
+  /// 1024-frame encoder priming; decoding yields priming plus padding, so it is not exactly
+  /// the number of playable frames.
   @ffi.Uint64()
   external int total_frames;
 

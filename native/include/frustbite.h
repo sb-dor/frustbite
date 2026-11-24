@@ -159,6 +159,32 @@ typedef uint32_t FrustbiteCodec;
 #endif // __cplusplus
 
 /**
+ * How a bucket's amplitude is computed. Values are part of the ABI.
+ *
+ */
+enum FrustbiteWaveformMode
+#if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+  : uint32_t
+#endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+ {
+  /**
+   * Largest absolute sample value.
+   */
+  FrustbiteWaveformMode_Peak = 0,
+  /**
+   * Root mean square.
+   */
+  FrustbiteWaveformMode_Rms = 1,
+};
+#ifndef __cplusplus
+#if __STDC_VERSION__ >= 202311L
+typedef enum FrustbiteWaveformMode FrustbiteWaveformMode;
+#else
+typedef uint32_t FrustbiteWaveformMode;
+#endif // __STDC_VERSION__ >= 202311L
+#endif // __cplusplus
+
+/**
  * An opened audio source. Immutable, so it can be shared between threads.
  */
 typedef struct FrustbiteAudio FrustbiteAudio;
@@ -192,7 +218,10 @@ typedef struct FrustbiteAudioInfo {
    */
   uint32_t bitrate;
   /**
-   * Playable frames per channel, after encoder delay and padding.
+   * Playable frames per channel, after encoder delay and padding. Exception: for AAC in
+   * MP4 (m4a) it comes from the mdhd duration without the edit list, so it includes the
+   * 1024-frame encoder priming; decoding yields priming plus padding, so it is not exactly
+   * the number of playable frames.
    */
   uint64_t total_frames;
   /**
@@ -279,14 +308,33 @@ FrustbiteErrorCode frustbite_decode(const struct FrustbiteAudio *audio,
                                     uint32_t *out_channels);
 
 /**
- * Releases a buffer from `frustbite_decode`. `len` must be the `*out_len` it returned.
+ * Summarises the whole source into `buckets` amplitudes in [0, 1] for drawing a waveform.
+ * `buckets` must be 1..=100000 and `mode` a `FrustbiteWaveformMode` value, else
+ * `InvalidParameter`. On success `*out` receives `*out_len` floats, channel-major (all buckets
+ * of channel 0, then channel 1, ...; one merged series unless `per_channel`), to release with
+ * `frustbite_free_f32` using the same length. Values are absolute full scale, not normalised.
+ * Heavy (decodes the whole source): call it off the UI thread.
+ *
+ * # Safety
+ * `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+ */
+FrustbiteErrorCode frustbite_waveform(const struct FrustbiteAudio *audio,
+                                      uint32_t buckets,
+                                      uint32_t mode,
+                                      bool per_channel,
+                                      float **out,
+                                      size_t *out_len);
+
+/**
+ * Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the `*out_len` it returned.
  * Passing null is a no-op.
  *
  * # Safety
- * `ptr` must be null or a buffer returned by `frustbite_decode` with the same `len`, not yet
+ * `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with the same `len`, not yet
  * freed.
  */
-void frustbite_free_f32(float *ptr, size_t len);
+void frustbite_free_f32(float *ptr,
+                        size_t len);
 
 #ifdef __cplusplus
 }  // extern "C"

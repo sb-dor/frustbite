@@ -8,6 +8,7 @@ const _sharedEnums = {
   'FrustbiteErrorCode',
   'FrustbiteContainer',
   'FrustbiteCodec',
+  'FrustbiteWaveformMode',
 };
 
 /// Functions that never call back into Dart and can run as leaf calls. Cheap calls only: no

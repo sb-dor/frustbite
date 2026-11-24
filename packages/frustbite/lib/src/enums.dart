@@ -102,3 +102,24 @@ enum FrustbiteCodec {
         throw ArgumentError.value(value, 'value', 'Unknown FrustbiteCodec'),
   );
 }
+
+enum FrustbiteWaveformMode {
+  /// Largest absolute sample value.
+  peak(0),
+
+  /// Root mean square.
+  rms(1);
+
+  const FrustbiteWaveformMode(this.value);
+
+  final int value;
+
+  static FrustbiteWaveformMode fromValue(int value) => values.firstWhere(
+    (e) => e.value == value,
+    orElse: () => throw ArgumentError.value(
+      value,
+      'value',
+      'Unknown FrustbiteWaveformMode',
+    ),
+  );
+}

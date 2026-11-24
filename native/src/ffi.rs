@@ -9,6 +9,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use crate::error::FrustbiteErrorCode;
 use crate::probe::{FrustbiteAudio, FrustbiteAudioInfo, FrustbiteContainer};
+use crate::waveform::FrustbiteWaveformMode;
 
 /// ABI contract version. Increment for incompatible signatures, layouts, or IDs.
 pub const FRUSTBITE_ABI_VERSION: u32 = 1;
@@ -193,11 +194,52 @@ pub unsafe extern "C" fn frustbite_decode(
     })
 }
 
-/// Releases a buffer from `frustbite_decode`. `len` must be the `*out_len` it returned.
+/// Summarises the whole source into `buckets` amplitudes in [0, 1] for drawing a waveform.
+/// `buckets` must be 1..=100000 and `mode` a `FrustbiteWaveformMode` value, else
+/// `InvalidParameter`. On success `*out` receives `*out_len` floats, channel-major (all buckets
+/// of channel 0, then channel 1, ...; one merged series unless `per_channel`), to release with
+/// `frustbite_free_f32` using the same length. Values are absolute full scale, not normalised.
+/// Heavy (decodes the whole source): call it off the UI thread.
+///
+/// # Safety
+/// `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_waveform(
+    audio: *const FrustbiteAudio,
+    buckets: u32,
+    mode: u32,
+    per_channel: bool,
+    out: *mut *mut f32,
+    out_len: *mut usize,
+) -> FrustbiteErrorCode {
+    guarded(|| {
+        if audio.is_null() || out.is_null() || out_len.is_null() {
+            return FrustbiteErrorCode::InvalidPointer;
+        }
+        let mode = match FrustbiteWaveformMode::from_u32(mode) {
+            Ok(mode) => mode,
+            Err(code) => return code,
+        };
+        match unsafe { &*audio }.waveform(buckets, mode, per_channel) {
+            Ok(values) => {
+                let len = values.len();
+                let ptr = Box::into_raw(values.into_boxed_slice()).cast::<f32>();
+                unsafe {
+                    out.write(ptr);
+                    out_len.write(len);
+                }
+                FrustbiteErrorCode::Success
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the `*out_len` it returned.
 /// Passing null is a no-op.
 ///
 /// # Safety
-/// `ptr` must be null or a buffer returned by `frustbite_decode` with the same `len`, not yet
+/// `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with the same `len`, not yet
 /// freed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn frustbite_free_f32(ptr: *mut f32, len: usize) {
@@ -210,7 +252,7 @@ pub unsafe extern "C" fn frustbite_free_f32(ptr: *mut f32, len: usize) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::ffi::CString;
     use std::ptr;
 
@@ -364,7 +406,7 @@ mod tests {
     }
 
     /// A WAV with a valid header and no sample data.
-    fn empty_wav() -> Vec<u8> {
+    pub(crate) fn empty_wav() -> Vec<u8> {
         let mut wav = b"RIFF".to_vec();
         wav.extend(36u32.to_le_bytes());
         wav.extend(b"WAVEfmt ");
@@ -477,5 +519,64 @@ mod tests {
         }
         assert!(samples.is_null());
         assert_eq!((len, rate, channels), (0, 0, 0));
+    }
+
+    #[test]
+    fn waveform_round_trip() {
+        let bytes = std::fs::read(format!("{FIXTURES}tone.wav")).unwrap();
+        let audio = open_bytes(&bytes);
+        let (mut values, mut len) = (ptr::null_mut(), 0usize);
+        unsafe {
+            for (per_channel, expected) in [(false, 64), (true, 128)] {
+                let code = frustbite_waveform(audio, 64, 0, per_channel, &mut values, &mut len);
+                assert_eq!(code, FrustbiteErrorCode::Success);
+                assert_eq!(len, expected);
+                assert!((0.49..=0.51).contains(&std::slice::from_raw_parts(values, len)[0]));
+                frustbite_free_f32(values, len);
+            }
+            frustbite_free(audio);
+        }
+    }
+
+    #[test]
+    fn waveform_errors_leave_out_untouched() {
+        let bytes = std::fs::read(format!("{FIXTURES}click.wav")).unwrap();
+        let audio = open_bytes(&bytes);
+        let sentinel = 0x1234usize as *mut f32;
+        let (mut values, mut len) = (sentinel, 777usize);
+        unsafe {
+            let cases = [
+                (
+                    audio.cast_const(),
+                    0,
+                    0,
+                    FrustbiteErrorCode::InvalidParameter,
+                ),
+                (
+                    audio.cast_const(),
+                    100_001,
+                    0,
+                    FrustbiteErrorCode::InvalidParameter,
+                ),
+                (
+                    audio.cast_const(),
+                    10,
+                    2,
+                    FrustbiteErrorCode::InvalidParameter,
+                ),
+                (ptr::null(), 10, 0, FrustbiteErrorCode::InvalidPointer),
+            ];
+            for (handle, buckets, mode, expected) in cases {
+                let code = frustbite_waveform(handle, buckets, mode, false, &mut values, &mut len);
+                assert_eq!(code, expected);
+                assert_eq!((values, len), (sentinel, 777));
+            }
+            let code = frustbite_waveform(audio, 10, 0, false, ptr::null_mut(), &mut len);
+            assert_eq!(code, FrustbiteErrorCode::InvalidPointer);
+            let code = frustbite_waveform(audio, 10, 0, false, &mut values, ptr::null_mut());
+            assert_eq!(code, FrustbiteErrorCode::InvalidPointer);
+            assert_eq!((values, len), (sentinel, 777));
+            frustbite_free(audio);
+        }
     }
 }
