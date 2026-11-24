@@ -96,6 +96,11 @@ void main() {
       () => Frustbite.fromMemory(fixture('tone_he.m4a')),
       throwsA(isA<UnsupportedFormatException>()),
     );
+    try {
+      Frustbite.fromMemory(fixture('tone_he.m4a'));
+    } on FrustbiteException catch (e) {
+      expect(e.code, FrustbiteErrorCode.unsupportedFormat);
+    }
   });
 
   test(

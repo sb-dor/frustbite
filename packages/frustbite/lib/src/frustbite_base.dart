@@ -36,8 +36,8 @@ final class Frustbite {
   static Future<void> initialize({Uri? wasmUri, Uint8List? wasmBytes}) =>
       BackendAudio.initialize(wasmUri: wasmUri, wasmBytes: wasmBytes);
 
-  /// Opens audio from [bytes]. The container is detected unless [format] is
-  /// given.
+  /// Opens audio from [bytes]. The container is detected from the content;
+  /// [format] is only an advisory hint, and a wrong hint is not an error.
   ///
   /// Throws [DecodingException] if [bytes] is empty or corrupt, and
   /// [UnsupportedFormatException] if the format is not supported.
@@ -46,7 +46,8 @@ final class Frustbite {
     return Frustbite._(BackendAudio.fromMemory(bytes, format));
   }
 
-  /// Opens audio from the file at [path].
+  /// Opens audio from the file at [path]. [format] is only an advisory hint:
+  /// content detection wins, and a wrong hint is not an error.
   ///
   /// Throws [InvalidPathException] if the path is empty or missing. Throws
   /// [UnsupportedError] on web; use [Frustbite.fromMemory] instead.
