@@ -50,6 +50,16 @@ Source parseSource(
   bool localBuild = false,
   bool hasFormats = false,
 }) {
+  if (value is Map<Object?, Object?>) {
+    final valid = {...OS.values.map((o) => o.name), 'default'};
+    final unknown = value.keys.where((key) => !valid.contains(key));
+    if (unknown.isNotEmpty) {
+      throw ArgumentError(
+        'frustbite: user-define `source` map has unknown keys '
+        '${unknown.join(', ')}. Valid keys: ${valid.join(', ')}',
+      );
+    }
+  }
   final picked = switch (value) {
     null => null,
     final Map<Object?, Object?> map => map[os.name] ?? map['default'],
@@ -161,13 +171,83 @@ Future<void> verifyPrebuilt(
 
 /// Where the Rust crate is, or `null`: first `<packageRoot>/rust/` (the
 /// published package), then `<packageRoot>/../../native/` (a repository
-/// checkout or a git dependency).
+/// checkout or a git dependency). The fallback only counts when its
+/// `Cargo.toml` declares the package `frustbite`, so an unrelated `native/`
+/// next to a path dependency is never built.
 Directory? findCrateDir(Uri packageRoot) {
-  for (final path in const ['rust/', '../../native/']) {
+  for (final (path, checkName) in const [
+    ('rust/', false),
+    ('../../native/', true),
+  ]) {
     final dir = Directory.fromUri(packageRoot.resolve(path));
-    if (File.fromUri(dir.uri.resolve('Cargo.toml')).existsSync()) return dir;
+    final manifest = File.fromUri(dir.uri.resolve('Cargo.toml'));
+    if (!manifest.existsSync()) continue;
+    if (checkName &&
+        cargoPackageName(manifest.readAsStringSync()) != libraryName) {
+      continue;
+    }
+    return dir;
   }
   return null;
+}
+
+/// The `name` of the `[package]` table in a Cargo.toml text, or `null`.
+String? cargoPackageName(String manifest) {
+  final name = RegExp(r'^name\s*=\s*"([^"]*)"');
+  var inPackage = false;
+  for (final raw in const LineSplitter().convert(manifest)) {
+    final line = raw.trim();
+    if (line.startsWith('[')) {
+      inPackage = line.startsWith('[package]');
+    } else if (inPackage) {
+      final match = name.firstMatch(line);
+      if (match != null) return match.group(1);
+    }
+  }
+  return null;
+}
+
+/// Finds the executable [name] (`cargo`, `rustup`): on `PATH` first, then in
+/// `$CARGO_HOME/bin`, then in `~/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on
+/// Windows). GUI-launched builds (an Xcode build phase, Android Studio on
+/// macOS) often lack `~/.cargo/bin` on `PATH`.
+///
+/// Returns the path to run, or `null` when none exists. [environment] and
+/// [fileExists] are injectable for tests.
+String? findTool(
+  String name, {
+  required Map<String, String> environment,
+  required bool windows,
+  required bool Function(String path) fileExists,
+}) {
+  final file = windows ? '$name.exe' : name;
+  final separator = windows ? r'\' : '/';
+  final pathVariable = windows ? ';' : ':';
+  final dirs = [
+    ...?environment[windows ? 'Path' : 'PATH']?.split(pathVariable),
+    if (windows) ...?environment['PATH']?.split(pathVariable),
+    ...cargoBinDirs(environment, windows: windows),
+  ];
+  for (final dir in dirs) {
+    if (dir.isEmpty) continue;
+    final path = dir.endsWith(separator) ? '$dir$file' : '$dir$separator$file';
+    if (fileExists(path)) return path;
+  }
+  return null;
+}
+
+/// `$CARGO_HOME/bin` and `~/.cargo/bin`, where rustup puts its proxies.
+List<String> cargoBinDirs(
+  Map<String, String> environment, {
+  required bool windows,
+}) {
+  final separator = windows ? r'\' : '/';
+  final home = environment[windows ? 'USERPROFILE' : 'HOME'];
+  final cargoHome = environment['CARGO_HOME'];
+  return [
+    if (cargoHome != null && cargoHome.isNotEmpty) '$cargoHome${separator}bin',
+    if (home != null && home.isNotEmpty) '$home$separator.cargo${separator}bin',
+  ];
 }
 
 /// What, besides the triple, makes a cargo build differ: the NDK API on

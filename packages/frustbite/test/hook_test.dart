@@ -287,7 +287,9 @@ void main() {
       final package = Directory('${root.path}/packages/frustbite')
         ..createSync(recursive: true);
       Directory('${root.path}/native').createSync();
-      File('${root.path}/native/Cargo.toml').writeAsStringSync('');
+      File(
+        '${root.path}/native/Cargo.toml',
+      ).writeAsStringSync('[package]\nname = "frustbite"\n');
       final dir = findCrateDir(package.uri);
       expect(dir, isNotNull);
       expect(
@@ -456,6 +458,167 @@ void main() {
       expect(message, contains('source: prebuilt'));
       expect(message, contains('source: build'));
       expect(message, contains('library:'));
+    });
+  });
+
+  group('per-OS map keys', () {
+    test('rejects keys that are not an OS name or default', () {
+      expect(
+        () => parseSource({'macOS': 'build'}, OS.macOS),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('macOS'), contains('macos'), contains('default')),
+          ),
+        ),
+      );
+    });
+
+    test('accepts every OS name', () {
+      for (final os in OS.values) {
+        expect(parseSource({os.name: 'build'}, os), Source.build);
+      }
+    });
+  });
+
+  group('crate name check', () {
+    test('the ../../native fallback must be the frustbite crate', () {
+      final root = _tempDir('frustbite_crate_');
+      final package = Directory('${root.path}/packages/frustbite')
+        ..createSync(recursive: true);
+      Directory('${root.path}/native').createSync();
+      File('${root.path}/native/Cargo.toml').writeAsStringSync(
+        '[package]\nname = "other"\n\n[dependencies]\nname = "frustbite"\n',
+      );
+      expect(findCrateDir(package.uri), isNull);
+      File(
+        '${root.path}/native/Cargo.toml',
+      ).writeAsStringSync('[package]\nname = "frustbite"\nversion = "0.0.1"\n');
+      expect(findCrateDir(package.uri), isNotNull);
+    });
+
+    test('cargoPackageName reads the [package] name only', () {
+      expect(
+        cargoPackageName('[lib]\nname = "x"\n[package]\nname = "frustbite"\n'),
+        'frustbite',
+      );
+      expect(cargoPackageName('[lib]\nname = "x"\n'), isNull);
+    });
+  });
+
+  group('findTool', () {
+    test('prefers PATH', () {
+      final found = findTool(
+        'cargo',
+        environment: {'PATH': '/a:/b', 'HOME': '/home/u'},
+        windows: false,
+        fileExists: {'/b/cargo', '/home/u/.cargo/bin/cargo'}.contains,
+      );
+      expect(found, '/b/cargo');
+    });
+
+    test('falls back to CARGO_HOME/bin, then ~/.cargo/bin', () {
+      final env = {'PATH': '/a', 'HOME': '/home/u', 'CARGO_HOME': '/ch'};
+      expect(
+        findTool(
+          'cargo',
+          environment: env,
+          windows: false,
+          fileExists: {'/ch/bin/cargo', '/home/u/.cargo/bin/cargo'}.contains,
+        ),
+        '/ch/bin/cargo',
+      );
+      expect(
+        findTool(
+          'rustup',
+          environment: env,
+          windows: false,
+          fileExists: {'/home/u/.cargo/bin/rustup'}.contains,
+        ),
+        '/home/u/.cargo/bin/rustup',
+      );
+    });
+
+    test('uses USERPROFILE and .exe on Windows', () {
+      expect(
+        findTool(
+          'cargo',
+          environment: {'Path': r'C:\x', 'USERPROFILE': r'C:\Users\u'},
+          windows: true,
+          fileExists: {r'C:\Users\u\.cargo\bin\cargo.exe'}.contains,
+        ),
+        r'C:\Users\u\.cargo\bin\cargo.exe',
+      );
+    });
+
+    test('returns null when nothing is found', () {
+      expect(
+        findTool(
+          'cargo',
+          environment: {'PATH': '/a', 'HOME': '/h'},
+          windows: false,
+          fileExists: (_) => false,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  group('cargoEnvironmentFor', () {
+    test('Android: linker, CC and AR from the NDK compiler config', () {
+      final bin = Uri.file('/ndk/bin/');
+      final env = cargoEnvironmentFor(
+        OS.android,
+        'armv7-linux-androideabi',
+        ndkCompiler: bin.resolve('clang'),
+        ndkArchiver: bin.resolve('llvm-ar'),
+        androidNdkApi: 30,
+      );
+      expect(env, {
+        'CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER':
+            '/ndk/bin/armv7a-linux-androideabi30-clang',
+        'CC_armv7_linux_androideabi':
+            '/ndk/bin/armv7a-linux-androideabi30-clang',
+        'AR_armv7_linux_androideabi': '/ndk/bin/llvm-ar',
+      });
+    });
+
+    test('Android without the NDK compiler is an error', () {
+      expect(
+        () => cargoEnvironmentFor(
+          OS.android,
+          'aarch64-linux-android',
+          androidNdkApi: 30,
+        ),
+        throwsStateError,
+      );
+    });
+
+    test('Apple: the deployment target', () {
+      expect(
+        cargoEnvironmentFor(
+          OS.macOS,
+          'aarch64-apple-darwin',
+          appleVersion: AppleVersion(13),
+        ),
+        {'MACOSX_DEPLOYMENT_TARGET': '13.0'},
+      );
+      expect(
+        cargoEnvironmentFor(
+          OS.iOS,
+          'aarch64-apple-ios',
+          appleVersion: AppleVersion(16, minor: 2),
+        ),
+        {'IPHONEOS_DEPLOYMENT_TARGET': '16.2'},
+      );
+    });
+
+    test('other platforms need nothing', () {
+      expect(
+        cargoEnvironmentFor(OS.linux, 'x86_64-unknown-linux-gnu'),
+        isEmpty,
+      );
     });
   });
 

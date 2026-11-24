@@ -119,21 +119,55 @@ Future<Uri> cargoBuild(
   final targetDir = input.outputDirectoryShared.resolve('cargo/$key/');
   final workingDirectory = crateDir.absolute.path;
 
-  // Best effort: lets rustup fetch the toolchain and targets that the crate's
-  // rust-toolchain.toml pins. Without rustup this is a no-op.
-  try {
-    await Process.run('rustup', [
-      'show',
-      'active-toolchain',
-    ], workingDirectory: workingDirectory);
-  } on ProcessException {
-    // No rustup: a system cargo is used as is.
+  final hostEnvironment = Platform.environment;
+  bool exists(String path) => File(path).existsSync();
+  final cargo = findTool(
+    'cargo',
+    environment: hostEnvironment,
+    windows: Platform.isWindows,
+    fileExists: exists,
+  );
+  if (cargo == null) {
+    throw CargoBuildException(
+      'cargo was not found on PATH or in ${cargoBinDirs(hostEnvironment, windows: Platform.isWindows).join(', ')}. '
+      'Install Rust from https://rustup.rs',
+    );
+  }
+  // Tools found in the cargo bin directory (not on PATH) need it on PATH to
+  // find each other (cargo -> rustc through the rustup proxies).
+  final cargoBin = File(cargo).parent.path;
+  final path = hostEnvironment[Platform.isWindows ? 'Path' : 'PATH'] ?? '';
+  environment[Platform.isWindows ? 'Path' : 'PATH'] = path.isEmpty
+      ? cargoBin
+      : '$cargoBin${Platform.isWindows ? ';' : ':'}$path';
+
+  // Best effort: `rustup toolchain install` without arguments reads the
+  // crate's rust-toolchain.toml and installs the pinned toolchain, its
+  // components and targets (rustup 1.28+ no longer does that on its own). On
+  // failure cargo runs anyway and reports what is missing.
+  final rustup = findTool(
+    'rustup',
+    environment: hostEnvironment,
+    windows: Platform.isWindows,
+    fileExists: exists,
+  );
+  if (rustup != null) {
+    try {
+      await Process.run(
+        rustup,
+        ['toolchain', 'install'],
+        workingDirectory: workingDirectory,
+        environment: environment,
+      );
+    } on ProcessException {
+      // Continue to cargo.
+    }
   }
 
   final ProcessResult result;
   try {
     result = await Process.run(
-      'cargo',
+      cargo,
       [
         'build',
         '--release',
@@ -169,44 +203,64 @@ Future<Uri> cargoBuild(
   return copy.uri;
 }
 
-/// The environment cargo needs for [triple]: on Android the NDK linker and
-/// C compiler (taken from `code.cCompiler`), on Apple platforms the minimum
+/// The environment cargo needs for [triple], from the hook's code config.
+Map<String, String> cargoEnvironment(CodeConfig code, String triple) =>
+    cargoEnvironmentFor(
+      code.targetOS,
+      triple,
+      ndkCompiler: code.cCompiler?.compiler,
+      ndkArchiver: code.cCompiler?.archiver,
+      androidNdkApi: code.targetOS == OS.android
+          ? code.android.targetNdkApi
+          : null,
+      appleVersion: switch (code.targetOS) {
+        OS.iOS => code.iOS.deploymentVersion,
+        OS.macOS => code.macOS.deploymentVersion,
+        _ => null,
+      },
+      windowsHost: Platform.isWindows,
+    );
+
+/// The environment cargo needs for [triple] on [os]: on Android the NDK
+/// linker and C compiler ([ndkCompiler] is `code.cCompiler.compiler`, a clang
+/// in the NDK's bin directory) and archiver, on Apple platforms the minimum
 /// OS version. Linker flags are in `native/build.rs`, not here.
-Map<String, String> cargoEnvironment(CodeConfig code, String triple) {
+Map<String, String> cargoEnvironmentFor(
+  OS os,
+  String triple, {
+  Uri? ndkCompiler,
+  Uri? ndkArchiver,
+  int? androidNdkApi,
+  AppleVersion? appleVersion,
+  bool windowsHost = false,
+}) {
   final env = <String, String>{};
   final cargoKey = triple.toUpperCase().replaceAll('-', '_');
   final ccKey = triple.replaceAll('-', '_');
-  switch (code.targetOS) {
+  switch (os) {
     case OS.android:
-      final compiler = code.cCompiler?.compiler;
-      if (compiler == null) {
+      if (ndkCompiler == null || ndkArchiver == null || androidNdkApi == null) {
         throw StateError(
           'the Android build needs the NDK C compiler (CCompilerConfig), '
           'which the Dart/Flutter build provides',
         );
       }
-      final clang = compiler
+      final clang = ndkCompiler
           .resolve(
             ndkClang(
               ndkTriplePrefix(triple),
-              code.android.targetNdkApi,
-              windows: Platform.isWindows,
+              androidNdkApi,
+              windows: windowsHost,
             ),
           )
           .toFilePath();
       env['CARGO_TARGET_${cargoKey}_LINKER'] = clang;
       env['CC_$ccKey'] = clang;
-      env['AR_$ccKey'] = compiler
-          .resolve(Platform.isWindows ? 'llvm-ar.exe' : 'llvm-ar')
-          .toFilePath();
+      env['AR_$ccKey'] = ndkArchiver.toFilePath();
     case OS.macOS:
-      env['MACOSX_DEPLOYMENT_TARGET'] = appleDeploymentTarget(
-        code.macOS.deploymentVersion,
-      );
+      env['MACOSX_DEPLOYMENT_TARGET'] = appleDeploymentTarget(appleVersion!);
     case OS.iOS:
-      env['IPHONEOS_DEPLOYMENT_TARGET'] = appleDeploymentTarget(
-        code.iOS.deploymentVersion,
-      );
+      env['IPHONEOS_DEPLOYMENT_TARGET'] = appleDeploymentTarget(appleVersion!);
     default:
   }
   return env;

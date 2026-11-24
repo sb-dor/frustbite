@@ -6,7 +6,7 @@ import 'package:code_assets/code_assets.dart';
 typedef SupportedTarget = (OS os, Architecture architecture, IOSSdk? iOSSdk);
 
 /// Target combinations of OS, architecture and iOS SDK that have prebuilt
-/// binaries. Used to decide which assets to download, build and hash.
+/// binaries. Used to name, build and bundle the prebuilt libraries.
 const supportedTargets = <SupportedTarget>[
   (OS.android, Architecture.arm, null),
   (OS.android, Architecture.arm64, null),

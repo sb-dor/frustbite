@@ -19,8 +19,8 @@
 //    library has every codec.
 // 4. `local_build: true` is an alias for `source: build`.
 //
-// Environment variables are not visible to hooks, so overrides go through
-// user defines. The resolution design follows PlugFox/ws (MIT,
+// The hooks runner passes only a few environment variables (`CARGO_*` and
+// `RUSTUP_*` among them), so overrides go through user defines. The resolution design follows PlugFox/ws (MIT,
 // https://github.com/PlugFox/ws, `native/hook/build.dart`); the code is
 // written for frustbite. Pixer-derived parts live in `lib/src/hook/`
 // (hawkkiller/pixer, MIT, Copyright (c) 2026 Michael Lazebny:
