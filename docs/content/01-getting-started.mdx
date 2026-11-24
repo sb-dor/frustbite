@@ -14,10 +14,11 @@ dependencies:
 dart pub get
 ```
 
-Frustbite's build hook downloads the prebuilt native binary for the current
-platform from the matching GitHub Release and verifies its SHA-256 hash. The
-package and the binary must have the same ABI version, which the package checks
-at load time.
+The package bundles the prebuilt native binary for every platform, and its
+build hook picks the one for the current target. The build is offline: nothing
+is downloaded and no Rust toolchain is needed. The hook verifies each binary
+against a SHA-256 hash that ships in the package. The package and the binary
+must have the same ABI version, which the package checks at load time.
 
 ## Platform requirements
 
@@ -28,7 +29,7 @@ The prebuilt binaries target these minimum OS versions:
 | iOS | 16.0 |
 | macOS | 13.0 |
 | Android | API 30 (Android 11) |
-| Linux | glibc 2.35 (Ubuntu 22.04, Debian 12) |
+| Linux | glibc 2.17 (CentOS 7 and every newer distribution) |
 
 A Flutter app has to raise its own minimums to match:
 
@@ -41,6 +42,38 @@ A Flutter app has to raise its own minimums to match:
 
 For other minimums, build from source (see
 [Formats and build](/formats-and-build)).
+
+## iOS privacy manifest
+
+Apple requires an app to declare the "required reason" APIs that it and its
+libraries call. The iOS libraries import `stat` and `fstat` (the Rust standard
+library uses them to open a file and read its size), which Apple lists under
+the **file timestamp** category. Frustbite never reads or exposes a timestamp,
+but Apple matches on the API. No other required-reason API is imported (not
+`getattrlist`, `mach_absolute_time`, `statfs` or `statvfs`). A pure Dart
+package cannot ship its own `PrivacyInfo.xcprivacy`, so declare the category in
+your app's `ios/Runner/PrivacyInfo.xcprivacy`:
+
+```xml
+<key>NSPrivacyAccessedAPITypes</key>
+<array>
+  <dict>
+    <key>NSPrivacyAccessedAPIType</key>
+    <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+    <key>NSPrivacyAccessedAPITypeReasons</key>
+    <array>
+      <!-- files inside the app container (bundled or downloaded assets) -->
+      <string>C617.1</string>
+      <!-- files the user picked, for example with a document picker -->
+      <string>3B52.1</string>
+    </array>
+  </dict>
+</array>
+```
+
+Keep only the reasons that match your app: `C617.1` if it opens audio in its
+own container, `3B52.1` if it opens files the user granted access to. macOS
+needs no manifest.
 
 ## Open a source
 

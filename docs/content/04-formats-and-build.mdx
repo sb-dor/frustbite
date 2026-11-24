@@ -43,51 +43,101 @@ Stage 1 only reads audio. All formats are decoded to `f32` PCM.
 
 ## How the native library is obtained
 
-By default the build hook downloads the prebuilt library for your target from
-the GitHub Release matching the package version, and verifies it against a
-SHA-256 hash that ships inside the package. Twelve targets are published:
-Android (armv7, arm64, x86_64), iOS (device, and simulator on arm64 and x86_64),
-Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows (x86_64, arm64).
+The published package carries the prebuilt library for every native target in
+its `prebuilt/` directory, and the build hook picks the one for your target.
+The build is offline and hermetic: no download, no network access and no Rust
+toolchain. Twelve targets are bundled: Android (armv7, arm64, x86_64), iOS
+(device, and simulator on arm64 and x86_64), Linux (x86_64, aarch64), macOS
+(arm64, x86_64) and Windows (x86_64, arm64).
 
-Linux binaries need glibc 2.35 or newer.
+Every target uses one file name (`libfrustbite.so`, `libfrustbite.dylib` or
+`frustbite.dll`), and only the directory, `prebuilt/<os>-<arch>[-sim]/`, tells
+the targets apart. This keeps Flutter from warning about different framework
+names per architecture.
+
+### Integrity check
+
+`prebuilt/checksums.json` maps `<target>/<file name>` to a SHA-256 hash. The
+hook hashes the bundled library and refuses to use it when the hash is missing
+or differs, with a `checksum mismatch` error. If you see it, clear the pub
+cache entry and reinstall. To check by hand, hash the file with `sha256sum`
+(or `shasum -a 256`) and compare it with its entry in that JSON.
+
+### Binary portability
+
+- Linux binaries are built with `cargo zigbuild` against glibc 2.17 and link
+  libgcc statically, so they load on every distribution with glibc 2.17 or
+  newer.
+- Android libraries are aligned to 16 KB pages.
+- Apple libraries have the install name `@rpath/libfrustbite.dylib`.
+- Windows libraries link the C runtime statically, so no Visual C++
+  Redistributable is needed.
+
+CI checks every library with `tool/verify_native.sh` before a release.
+
+## Choose where the library comes from
+
+Set user defines in your application's `pubspec.yaml`. The hook resolves the
+library in this order:
+
+1. `library: <path>` uses that file as is. It must exist.
+2. `source` is one of:
+   - `auto` (default): the bundled library if there is one, else
+     `cargo build` if the Rust crate and cargo are present, else a
+     `StateError` that lists these options.
+   - `prebuilt`: only the bundled library. It is an error if it is missing.
+   - `build`: only `cargo build --release --locked` of the Rust crate.
+   - `none`: add no library. The app then fails at its first Frustbite call
+     with the "missing native library" error.
+3. `formats` and `local_build: true` both mean `source: build`.
+
+```yaml
+hooks:
+  user_defines:
+    frustbite:
+      library: /opt/frustbite/libfrustbite.so
+```
+
+`source` also takes a map per OS, with an optional `default`. The keys are Dart
+OS names (`android`, `ios`, `linux`, `macos`, `windows`). An unknown key or
+value is an error, never a silent `auto`.
+
+```yaml
+hooks:
+  user_defines:
+    frustbite:
+      source:
+        default: prebuilt
+        linux: build
+```
 
 ## Build from source
 
-Set the `local_build` user define to compile the crate with Cargo instead of
-downloading it. This needs a Rust toolchain. In your application's
+Set `source: build` (or the alias `local_build: true`) to compile the crate
+with Cargo. This needs a Rust toolchain, and it works with the package from
+pub.dev: the package carries the crate in `rust/`. In a repository checkout or
+with a git dependency, the hook uses `native/`. In your application's
 `pubspec.yaml`:
 
 ```yaml
 hooks:
   user_defines:
     frustbite:
-      local_build: true
+      source: build
 ```
 
-:::warning
-Source builds work only with a git dependency. The Rust crate is not included
-in the package published on pub.dev, while a git dependency makes pub clone the
-whole repository:
-
-```yaml
-dependencies:
-  frustbite:
-    git:
-      url: https://github.com/sb-dor/frustbite
-      path: packages/frustbite
-```
-
-Without it, the build fails with a `StateError` that explains this. With no
-user defines the hook downloads prebuilt binaries, which works with the pub.dev
-package.
-:::
+The hook finds `cargo` on `PATH`, then in `$CARGO_HOME/bin`, then in
+`~/.cargo/bin`, so a Rust installed by rustup works even when your shell
+profile is not loaded. The crate pins its toolchain in `rust-toolchain.toml`,
+which rustup installs on the first build. With no cargo and no bundled library
+for your target the build fails with an error that names the `source` options.
 
 ## Reduce the binary size with `formats`
 
 By default every codec is compiled in. The `formats` user define compiles only
 the codecs you list, which makes the library smaller. Setting it implies a
-source build, so a Rust toolchain and the git dependency described above are
-required.
+source build, so a Rust toolchain is required. Combining it with
+`source: prebuilt` is an error.
 
 ```yaml
 hooks:
