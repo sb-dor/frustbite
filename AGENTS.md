@@ -12,6 +12,8 @@ A pure-Dart audio library backed by a Rust crate through FFI and Dart build hook
   - `hook/build.dart`: build hook; `lib/src/hook/local_build.dart`: source build via `native_toolchain_rust`.
   - `lib/src/bindings/bindings.dart`: generated `@Native` bindings; `lib/src/enums.dart`: generated shared enums.
   - `lib/src/abi.dart`: ABI constant and check; `tool/generate_bindings.dart`: generator.
+  - `lib/src/backend.dart`: picks `backend_native.dart` (FFI) or `web/backend_web.dart` + `web/wasm_runtime.dart` (`dart:js_interop` over `frustbite.wasm`); both expose the same `BackendAudio` surface.
+  - `tool/build_wasm.dart`: builds `frustbite.wasm` (release, `wasm32-unknown-unknown`) and copies it to the given path.
   - `test/`: Dart tests; `test/fixtures/`: audio fixtures.
 - Root `pubspec.yaml`: pub workspace; `hooks.user_defines.frustbite.local_build: true` builds from source.
 
@@ -34,6 +36,12 @@ dart test
 
 # wasm: check the crate still builds for the web target (from native/)
 cargo clippy --target wasm32-unknown-unknown -- -D warnings
+
+# wasm browser tests (from packages/frustbite/; needs Chrome). Only the wasm test file runs in the
+# browser: the other test files use dart:io / dart:ffi.
+dart tool/build_wasm.dart test/frustbite.wasm
+dart test -p chrome test/frustbite_wasm_test.dart
+dart test -p chrome --compiler dart2wasm test/frustbite_wasm_test.dart
 
 # Benchmarks: added in a later stage
 ```

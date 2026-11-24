@@ -15,6 +15,10 @@ enum WaveformMode {
   rms,
 }
 
+/// `FRUSTBITE_FORMAT_DETECT`: no container hint, detect from the content.
+/// Shared by both backends; a test pins it to the generated bindings.
+const formatDetectWire = 0xFFFFFFFF;
+
 /// Mapping between the public enums and the ABI values. Not exported.
 ///
 /// Exhaustive switches: adding a value to either side is a compile error here.

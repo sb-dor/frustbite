@@ -3,6 +3,9 @@ import 'dart:typed_data';
 
 import 'package:frustbite/frustbite.dart';
 import 'package:frustbite/src/abi.dart';
+import 'package:frustbite/src/audio_enums.dart';
+import 'package:frustbite/src/bindings/bindings.dart'
+    show FRUSTBITE_FORMAT_DETECT;
 import 'package:test/test.dart';
 
 Uint8List fixture(String name) => File('test/fixtures/$name').readAsBytesSync();
@@ -15,6 +18,10 @@ void main() {
   test('checkFrustbiteAbi throws on mismatch', () {
     expect(() => checkFrustbiteAbi(frustbiteAbiVersion + 1), throwsStateError);
     expect(() => checkFrustbiteAbi(frustbiteAbiVersion), returnsNormally);
+  });
+
+  test('the shared format-detect value matches the header', () {
+    expect(formatDetectWire, FRUSTBITE_FORMAT_DETECT);
   });
 
   test('initialize is a no-op on native', () async {

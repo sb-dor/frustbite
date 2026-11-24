@@ -62,6 +62,9 @@ final class BackendAudio implements ffi.Finalizable {
     _ensureCompatible();
   }
 
+  /// Files are supported on native platforms.
+  static void ensureFilesSupported() {}
+
   factory BackendAudio.fromMemory(Uint8List bytes, AudioContainer? format) =>
       ffi.using((arena) {
         _ensureCompatible();
@@ -72,7 +75,7 @@ final class BackendAudio implements ffi.Finalizable {
           frustbite_open_memory(
             data,
             bytes.length,
-            format?.wireValue ?? FRUSTBITE_FORMAT_DETECT,
+            format?.wireValue ?? formatDetectWire,
             out,
           ),
           'input: memory',
@@ -87,7 +90,7 @@ final class BackendAudio implements ffi.Finalizable {
         checkError(
           frustbite_open_file(
             path.toNativeUtf8(allocator: arena).cast(),
-            format?.wireValue ?? FRUSTBITE_FORMAT_DETECT,
+            format?.wireValue ?? formatDetectWire,
             out,
           ),
           'path: $path',

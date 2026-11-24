@@ -1,0 +1,2 @@
+# Built by `dart tool/build_wasm.dart test/frustbite.wasm` for the browser tests.
+test/frustbite.wasm

@@ -10,8 +10,8 @@ import 'waveform.dart';
 
 /// An opened audio source, backed by Rust on native and web platforms.
 ///
-/// Call [dispose] when done. Native finalizers are only a safety net. Using a
-/// disposed instance throws [StateError].
+/// Call [dispose] when done. Finalizers are only a safety net. Using a
+/// disposed instance throws [StateError]. On web, await [initialize] first.
 ///
 /// ```dart
 /// final audio = Frustbite.fromFile('song.mp3');
@@ -43,6 +43,12 @@ final class Frustbite {
   static int get abiVersion => BackendAudio.abiVersion;
 
   /// Loads the WASM module on web; a no-op on native platforms.
+  ///
+  /// On web, call and await this before any other use, or that use throws
+  /// [StateError]. With no argument, `frustbite.wasm` is fetched relative to
+  /// the page; pass [wasmUri] or [wasmBytes] (not both) to load it from
+  /// elsewhere. Throws [StateError] if the module cannot be loaded or does not
+  /// match this package's ABI; a failed load can be retried.
   static Future<void> initialize({Uri? wasmUri, Uint8List? wasmBytes}) =>
       BackendAudio.initialize(wasmUri: wasmUri, wasmBytes: wasmBytes);
 
@@ -59,9 +65,11 @@ final class Frustbite {
   /// Opens audio from the file at [path]. [format] is only an advisory hint:
   /// content detection wins, and a wrong hint is not an error.
   ///
-  /// Throws [InvalidPathException] if the path is empty or missing. Throws
-  /// [UnsupportedError] on web; use [Frustbite.fromMemory] instead.
+  /// Throws [InvalidPathException] if the path is empty or missing. On web it
+  /// always throws [UnsupportedError], before any other check; use
+  /// [Frustbite.fromMemory] instead.
   factory Frustbite.fromFile(String path, {AudioContainer? format}) {
+    BackendAudio.ensureFilesSupported();
     if (path.trim().isEmpty) throw InvalidPathException('path is empty');
     return Frustbite._(BackendAudio.fromFile(path, format));
   }
@@ -115,7 +123,9 @@ final class Frustbite {
     return _backend.decode();
   }
 
-  /// Like [waveform], but runs on a background isolate.
+  /// Like [waveform], but runs on a background isolate. On web, where wasm
+  /// memory cannot be shared with another isolate, it runs on the same thread
+  /// in a later event-loop turn.
   ///
   /// [dispose] throws [StateError] while this is in flight.
   Future<Waveform> waveformAsync({
@@ -133,7 +143,8 @@ final class Frustbite {
     }
   }
 
-  /// Like [decode], but runs on a background isolate.
+  /// Like [decode], but runs on a background isolate (on web: in a later
+  /// event-loop turn, as with [waveformAsync]).
   ///
   /// [dispose] throws [StateError] while this is in flight.
   Future<AudioPcm> decodeAsync() async {
