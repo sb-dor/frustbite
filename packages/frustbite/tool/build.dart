@@ -53,7 +53,7 @@ Future<void> main(List<String> rawArgs) async {
 
   for (final name in selected) {
     final (os, architecture, iOSSdk) = _targets[name]!;
-    final triple = _rustTriple(os, architecture, iOSSdk);
+    final triple = rustTriple(os, architecture, iOSSdk: iOSSdk);
     final environment = <String, String>{
       // Honour the minimum OS versions (see target_versions.dart).
       if (os == OS.macOS) 'MACOSX_DEPLOYMENT_TARGET': '$macOSTargetVersion',
@@ -108,33 +108,3 @@ final _targets = {
   for (final target in supportedTargets)
     getNameForTarget(target.$1, target.$2, target.$3): target,
 };
-
-String _rustTriple(OS os, Architecture architecture, IOSSdk? iOSSdk) {
-  switch ((os, architecture, iOSSdk)) {
-    case (OS.android, Architecture.arm, _):
-      return 'armv7-linux-androideabi';
-    case (OS.android, Architecture.arm64, _):
-      return 'aarch64-linux-android';
-    case (OS.android, Architecture.x64, _):
-      return 'x86_64-linux-android';
-    case (OS.iOS, Architecture.arm64, IOSSdk.iPhoneOS):
-      return 'aarch64-apple-ios';
-    case (OS.iOS, Architecture.arm64, IOSSdk.iPhoneSimulator):
-      return 'aarch64-apple-ios-sim';
-    case (OS.iOS, Architecture.x64, _):
-      return 'x86_64-apple-ios';
-    case (OS.linux, Architecture.arm64, _):
-      return 'aarch64-unknown-linux-gnu';
-    case (OS.linux, Architecture.x64, _):
-      return 'x86_64-unknown-linux-gnu';
-    case (OS.macOS, Architecture.arm64, _):
-      return 'aarch64-apple-darwin';
-    case (OS.macOS, Architecture.x64, _):
-      return 'x86_64-apple-darwin';
-    case (OS.windows, Architecture.arm64, _):
-      return 'aarch64-pc-windows-msvc';
-    case (OS.windows, Architecture.x64, _):
-      return 'x86_64-pc-windows-msvc';
-  }
-  throw UnimplementedError('Unsupported target: $os $architecture $iOSSdk');
-}
