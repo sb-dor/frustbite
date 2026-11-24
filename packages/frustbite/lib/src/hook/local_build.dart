@@ -58,7 +58,7 @@ List<String>? readFormats(HookInput input) {
   return formats.toList()..sort();
 }
 
-/// Upper bound for the best-effort `rustup toolchain install`.
+/// Upper bound for each best-effort rustup step.
 const _rustupTimeout = Duration(minutes: 5);
 
 /// The cargo arguments that select [formats]; none for the default (all)
@@ -146,10 +146,12 @@ Future<Uri> cargoBuild(
       ? cargoBin
       : '$cargoBin${Platform.isWindows ? ';' : ':'}$path';
 
-  // Best effort: `rustup toolchain install` without arguments reads the
-  // crate's rust-toolchain.toml and installs the pinned toolchain, its
-  // components and targets (rustup 1.28+ no longer does that on its own). On
-  // failure cargo runs anyway and reports what is missing.
+  // Best effort, both steps: `rustup toolchain install` without a toolchain
+  // reads the crate's rust-toolchain.toml and installs that channel (rustup
+  // 1.28+ no longer does it on its own), then the one target this build
+  // needs. `--no-self-update` keeps rustup from updating itself in the
+  // user's environment. On failure cargo runs anyway and reports what is
+  // missing.
   final rustup = findTool(
     'rustup',
     environment: hostEnvironment,
@@ -157,27 +159,24 @@ Future<Uri> cargoBuild(
     fileExists: exists,
   );
   if (rustup != null) {
-    try {
-      final process = await Process.start(
-        rustup,
-        ['toolchain', 'install'],
-        workingDirectory: workingDirectory,
-        environment: environment,
-      );
-      // Drain the output so the process cannot block on a full pipe.
-      unawaited(process.stdout.drain<void>());
-      unawaited(process.stderr.drain<void>());
-      // A stalled network must not hang the hook forever.
-      await process.exitCode.timeout(
-        _rustupTimeout,
-        onTimeout: () {
-          process.kill();
-          return -1;
-        },
-      );
-    } on ProcessException {
-      // Continue to cargo.
-    }
+    await _rustup(
+      rustup,
+      rustupToolchainInstallArgs,
+      workingDirectory,
+      environment,
+    );
+    final toolchainFile = File.fromUri(
+      crateDir.absolute.uri.resolve('rust-toolchain.toml'),
+    );
+    final channel = toolchainFile.existsSync()
+        ? rustToolchainChannel(toolchainFile.readAsStringSync())
+        : null;
+    await _rustup(
+      rustup,
+      rustupTargetAddArgs(triple, channel),
+      workingDirectory,
+      environment,
+    );
   }
 
   final ProcessResult result;
@@ -218,6 +217,37 @@ Future<Uri> cargoBuild(
   await copy.parent.create(recursive: true);
   await built.copy(copy.path);
   return copy.uri;
+}
+
+/// Runs `rustup` with [args], ignoring every failure: a missing network, a
+/// timeout or a nonzero exit leave the report to cargo.
+Future<void> _rustup(
+  String rustup,
+  List<String> args,
+  String workingDirectory,
+  Map<String, String> environment,
+) async {
+  try {
+    final process = await Process.start(
+      rustup,
+      args,
+      workingDirectory: workingDirectory,
+      environment: environment,
+    );
+    // Drain the output so the process cannot block on a full pipe.
+    unawaited(process.stdout.drain<void>());
+    unawaited(process.stderr.drain<void>());
+    // A stalled network must not hang the hook forever.
+    await process.exitCode.timeout(
+      _rustupTimeout,
+      onTimeout: () {
+        process.kill();
+        return -1;
+      },
+    );
+  } on ProcessException {
+    // Continue to cargo.
+  }
 }
 
 /// The environment cargo needs for [triple], from the hook's code config.

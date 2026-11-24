@@ -96,6 +96,22 @@ Source parseSource(
   return explicit ?? Source.auto;
 }
 
+/// Rejects `formats` together with `library:`. A user-provided file is used
+/// as is, so a codec selection cannot apply to it.
+void checkLibraryWithFormats({
+  required bool hasLibrary,
+  required bool hasFormats,
+}) {
+  if (hasLibrary && hasFormats) {
+    throw ArgumentError(
+      'frustbite: `formats` cannot be combined with `library:`. `library` '
+      'uses your file as is, so the codec selection cannot apply to it. Drop '
+      '`formats` and build the library with the features you want, or drop '
+      '`library` to let the hook build with `formats`.',
+    );
+  }
+}
+
 /// The directory of a target under `prebuilt/`: `<os>-<arch>[-sim]`, from
 /// `OS.name` and `Architecture.name` (`macos-arm64`, `ios-arm64-sim`,
 /// `android-arm`, `windows-x64`).
@@ -221,6 +237,37 @@ String? cargoPackageName(String manifest) {
   }
   return null;
 }
+
+/// The `channel` of the `[toolchain]` table in a `rust-toolchain.toml` text,
+/// or `null` when there is none. A plain line parse, not a TOML parser.
+String? rustToolchainChannel(String toolchain) {
+  final channel = RegExp(r'''^channel\s*=\s*(["'])(.*?)\1''');
+  var inToolchain = false;
+  for (final raw in const LineSplitter().convert(toolchain)) {
+    final line = raw.trim();
+    if (line.startsWith('[')) {
+      inToolchain = line.startsWith('[toolchain]');
+    } else if (inToolchain) {
+      final match = channel.firstMatch(line);
+      if (match != null && match.group(2)!.isNotEmpty) return match.group(2);
+    }
+  }
+  return null;
+}
+
+/// The rustup arguments that install the toolchain `rust-toolchain.toml`
+/// names, without updating rustup itself.
+const rustupToolchainInstallArgs = ['toolchain', 'install', '--no-self-update'];
+
+/// The rustup arguments that add [triple] to the toolchain [channel] (the one
+/// of `rust-toolchain.toml`); without a [channel] the toolchain is left to
+/// rustup's own resolution from the working directory.
+List<String> rustupTargetAddArgs(String triple, String? channel) => [
+  'target',
+  'add',
+  triple,
+  if (channel != null) ...['--toolchain', channel],
+];
 
 /// Finds the executable [name] (`cargo`, `rustup`): on `PATH` first, then in
 /// `$CARGO_HOME/bin`, then in `~/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on

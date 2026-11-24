@@ -3,7 +3,11 @@
 // Where the library comes from, in order (user defines go in the app's
 // pubspec.yaml under `hooks: user_defines: frustbite:`):
 //
-// 1. `library: <path>`: that file, as is. It must exist.
+// 1. `library: <path>`: that file, as is. It must exist. It is unchecked: no
+//    checksum and no build-time ABI check (only the runtime ABI check at the
+//    first call), and `formats` cannot be combined with it. A relative path
+//    resolves against the directory of the pubspec that sets the define (the
+//    app's or workspace's pubspec.yaml), not the working directory.
 // 2. `source`, one of (default `auto`; also a per-OS map such as
 //    `{default: prebuilt, linux: build}`):
 //    - `none`: no asset. The app then fails at its first frustbite call with
@@ -69,6 +73,10 @@ void main(List<String> args) async {
     );
 
     Uri? library = input.userDefines.path('library');
+    checkLibraryWithFormats(
+      hasLibrary: library != null,
+      hasFormats: formats != null,
+    );
     if (library != null) {
       if (!File.fromUri(library).existsSync()) {
         throw ArgumentError(
