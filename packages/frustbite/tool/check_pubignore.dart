@@ -20,9 +20,11 @@
 // a trailing `/`, `*`, `**` and `?`.
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 /// The problems of the staged package in [staged]; empty when it is fine.
 List<String> checkPubignore(Directory staged) {
-  final file = File('${staged.path}/.pubignore');
+  final file = File(p.join(staged.path, '.pubignore'));
   if (!file.existsSync()) {
     return [
       'There is no .pubignore: pub would fall back to the .gitignore, which '
@@ -33,15 +35,17 @@ List<String> checkPubignore(Directory staged) {
   final problems = <String>[];
 
   for (final dir in ['prebuilt', 'rust']) {
-    final root = Directory('${staged.path}/$dir');
+    final root = Directory(p.join(staged.path, dir));
     if (!root.existsSync()) {
       problems.add('$dir/ is missing from the staged package.');
       continue;
     }
     for (final entity in root.listSync(recursive: true)) {
       if (entity is! File) continue;
-      final path = entity.path.substring(staged.path.length + 1);
-      if (path.split('/').any((part) => part.startsWith('.'))) {
+      // `/`-separated whatever the platform: the ignore rules match on that.
+      final parts = p.split(p.relative(entity.path, from: staged.path));
+      final path = parts.join('/');
+      if (parts.any((part) => part.startsWith('.'))) {
         problems.add(
           '$path is hidden: pub leaves hidden files out of the archive.',
         );
@@ -52,7 +56,7 @@ List<String> checkPubignore(Directory staged) {
     }
   }
   for (final path in ['rust/Cargo.lock', 'rust/cargo-config.toml']) {
-    if (!File('${staged.path}/$path').existsSync()) {
+    if (!File(p.joinAll([staged.path, ...path.split('/')])).existsSync()) {
       problems.add('$path is missing from the staged package.');
     }
   }

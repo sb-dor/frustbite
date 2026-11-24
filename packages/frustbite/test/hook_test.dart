@@ -115,6 +115,77 @@ void main() {
     });
   });
 
+  group('library override', () {
+    test('formats with library: is a clear ArgumentError', () {
+      expect(
+        () => checkLibraryWithFormats(hasLibrary: true, hasFormats: true),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('formats'), contains('library')),
+          ),
+        ),
+      );
+    });
+
+    test('either alone is fine', () {
+      checkLibraryWithFormats(hasLibrary: true, hasFormats: false);
+      checkLibraryWithFormats(hasLibrary: false, hasFormats: true);
+      checkLibraryWithFormats(hasLibrary: false, hasFormats: false);
+    });
+
+    test('a relative library resolves against the defining pubspec', () {
+      final input = _inputWith({'library': 'out/libfrustbite.so'});
+      expect(
+        input.userDefines.path('library'),
+        input.packageRoot.resolve('out/libfrustbite.so'),
+      );
+    });
+  });
+
+  group('rustup arguments', () {
+    test('toolchain install never self-updates', () {
+      expect(rustupToolchainInstallArgs, [
+        'toolchain',
+        'install',
+        '--no-self-update',
+      ]);
+    });
+
+    test('target add names the pinned channel when it is known', () {
+      expect(rustupTargetAddArgs('aarch64-linux-android', '1.100.0'), [
+        'target',
+        'add',
+        'aarch64-linux-android',
+        '--toolchain',
+        '1.100.0',
+      ]);
+      expect(rustupTargetAddArgs('aarch64-linux-android', null), [
+        'target',
+        'add',
+        'aarch64-linux-android',
+      ]);
+    });
+
+    test('the channel is a simple parse of rust-toolchain.toml', () {
+      expect(
+        rustToolchainChannel('[toolchain]\nchannel = "1.100.0"\n'),
+        '1.100.0',
+      );
+      expect(
+        rustToolchainChannel("# c\n[toolchain]\nchannel='nightly'\ntargets=[]"),
+        'nightly',
+      );
+      expect(
+        rustToolchainChannel('[toolchain]\nprofile = "minimal"\n'),
+        isNull,
+      );
+      expect(rustToolchainChannel('[other]\nchannel = "x"\n'), isNull);
+      expect(rustToolchainChannel(''), isNull);
+    });
+  });
+
   group('prebuilt directory names', () {
     test('all 12 targets map to os-arch[-sim] names', () {
       final names = {
@@ -389,7 +460,12 @@ void main() {
       expect(cargoConfigArgs(crate), isEmpty);
       final config = File('${crate.path}/cargo-config.toml')
         ..writeAsStringSync('');
-      expect(cargoConfigArgs(crate), ['--config', config.path]);
+      expect(cargoConfigArgs(crate), [
+        '--config',
+        File.fromUri(crate.absolute.uri.resolve('cargo-config.toml')).path,
+      ]);
+      expect(File(cargoConfigArgs(crate).last).existsSync(), isTrue);
+      expect(config.existsSync(), isTrue);
     });
   });
 
@@ -578,7 +654,10 @@ void main() {
 
   group('cargoEnvironmentFor', () {
     test('Android: linker, CC and AR from the NDK compiler config', () {
+      // The expected paths go through the same Uri to path conversion as the
+      // code, so they hold on Windows too (`\ndk\bin\...`).
       final bin = Uri.file('/ndk/bin/');
+      String ndk(String name) => bin.resolve(name).toFilePath();
       final env = cargoEnvironmentFor(
         OS.android,
         'armv7-linux-androideabi',
@@ -587,11 +666,11 @@ void main() {
         androidNdkApi: 30,
       );
       expect(env, {
-        'CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER':
-            '/ndk/bin/armv7a-linux-androideabi30-clang',
-        'CC_armv7_linux_androideabi':
-            '/ndk/bin/armv7a-linux-androideabi30-clang',
-        'AR_armv7_linux_androideabi': '/ndk/bin/llvm-ar',
+        'CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER': ndk(
+          'armv7a-linux-androideabi30-clang',
+        ),
+        'CC_armv7_linux_androideabi': ndk('armv7a-linux-androideabi30-clang'),
+        'AR_armv7_linux_androideabi': ndk('llvm-ar'),
       });
     });
 
