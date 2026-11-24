@@ -33,13 +33,19 @@ pub enum AudioSource {
 }
 
 impl AudioSource {
-    /// Size of the underlying data in bytes.
-    pub fn byte_length(&self) -> usize {
+    /// Bytes this source holds in memory: the copy for `Memory`, nothing for `File`.
+    pub fn resident_bytes(&self) -> usize {
         match self {
             Self::Memory(bytes) => bytes.len(),
-            Self::File(path) => std::fs::metadata(path)
-                .map(|meta| usize::try_from(meta.len()).unwrap_or(usize::MAX))
-                .unwrap_or(0),
+            Self::File(_) => 0,
+        }
+    }
+
+    /// Size of the underlying data in bytes (reads file metadata; call once, at open).
+    pub fn data_size(&self) -> u64 {
+        match self {
+            Self::Memory(bytes) => bytes.len() as u64,
+            Self::File(path) => std::fs::metadata(path).map(|meta| meta.len()).unwrap_or(0),
         }
     }
 

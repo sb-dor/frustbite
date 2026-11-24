@@ -142,9 +142,16 @@ impl AudioDecoder for OpusDecoder {
     fn decode_ref(&mut self, packet: &PacketRef<'_>) -> Result<GenericAudioBufferRef<'_>> {
         self.buffer.clear();
         // An empty packet is a lost packet: the decoder conceals it.
+        // A lost packet conceals as many frames as it was meant to carry.
+        let frame_size = if packet.data.is_empty() {
+            usize::try_from(packet.dur.get())
+                .map_or(MAX_PACKET_FRAMES, |dur| dur.clamp(1, MAX_PACKET_FRAMES))
+        } else {
+            MAX_PACKET_FRAMES
+        };
         let frames = self
             .inner
-            .decode(packet.data, MAX_PACKET_FRAMES, &mut self.interleaved)
+            .decode(packet.data, frame_size, &mut self.interleaved)
             .map_err(|_| Error::DecodeError("opus: corrupt packet"))?;
 
         self.buffer.render_uninit(Some(frames));

@@ -167,11 +167,21 @@ struct Probed {
     known_frames: Option<u64>,
 }
 
+/// Consecutive undecodable packets after which the duration scan gives up.
+const MAX_CONSECUTIVE_SCAN_ERRORS: u32 = 64;
+
 /// An opened audio source. Immutable, so it can be shared between threads.
 pub struct FrustbiteAudio {
     source: AudioSource,
+    /// The caller's container hint; every re-open of the stream uses it.
+    hint: Option<FrustbiteContainer>,
     probed: Probed,
-    info: OnceLock<Result<FrustbiteAudioInfo, Code>>,
+    /// Size of the data, read once at open (for the bitrate estimate).
+    data_size: u64,
+    /// Only successful results are cached, so a transient failure can be retried.
+    info: OnceLock<FrustbiteAudioInfo>,
+    #[cfg(test)]
+    info_builds: std::sync::atomic::AtomicUsize,
 }
 
 impl FrustbiteAudio {
@@ -188,25 +198,35 @@ impl FrustbiteAudio {
         Self::open(AudioSource::File(path.into()), container)
     }
 
-    fn open(source: AudioSource, container: Option<FrustbiteContainer>) -> Result<Self, Code> {
-        let probed = probe(&source, container)?;
+    fn open(source: AudioSource, hint: Option<FrustbiteContainer>) -> Result<Self, Code> {
+        let probed = probe(&source, hint)?;
+        let data_size = source.data_size();
         Ok(Self {
             source,
+            hint,
             probed,
+            data_size,
             info: OnceLock::new(),
+            #[cfg(test)]
+            info_builds: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
-    /// Size of the underlying data in bytes.
+    /// Bytes this handle keeps in memory: the copied data for memory sources, 0 for files.
     pub fn byte_length(&self) -> usize {
-        self.source.byte_length()
+        self.source.resident_bytes()
     }
 
-    /// The stream description; computed on the first call and cached.
+    /// The stream description; computed on the first successful call and cached.
     pub fn info(&self) -> Result<FrustbiteAudioInfo, Code> {
-        *self
-            .info
-            .get_or_init(|| build_info(&self.source, &self.probed, self.byte_length()))
+        if let Some(info) = self.info.get() {
+            return Ok(*info);
+        }
+        #[cfg(test)]
+        self.info_builds
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let info = build_info(&self.source, self.hint, &self.probed, self.data_size)?;
+        Ok(*self.info.get_or_init(|| info))
     }
 }
 
@@ -271,9 +291,14 @@ fn probe(source: &AudioSource, hint: Option<FrustbiteContainer>) -> Result<Probe
         .make_audio_decoder(params, &AudioDecoderOptions::default())
         .map_err(|error| map_error(&error))?;
 
-    let (sample_rate, pre_skip, known_frames) = if codec == FrustbiteCodec::Opus {
-        let (rate, pre_skip) = opus_stream(params)?;
-        (rate, pre_skip, None)
+    let (sample_rate, pre_skip, known_frames, opus_channels) = if codec == FrustbiteCodec::Opus {
+        let stream = opus_stream(params)?;
+        (
+            stream.sample_rate,
+            stream.pre_skip,
+            None,
+            Some(stream.channels),
+        )
     } else {
         (
             params.sample_rate.ok_or(Code::DecodingError)?,
@@ -285,15 +310,19 @@ fn probe(source: &AudioSource, hint: Option<FrustbiteContainer>) -> Result<Probe
             } else {
                 track.num_frames
             },
+            None,
         )
     };
-    let channels = params
-        .channels
-        .as_ref()
-        .map(|channels| channels.count())
-        .and_then(|count| u32::try_from(count).ok())
-        .filter(|&count| count > 0)
-        .ok_or(Code::DecodingError)?;
+    let channels = match opus_channels {
+        Some(channels) => channels,
+        None => params
+            .channels
+            .as_ref()
+            .map(|channels| channels.count())
+            .and_then(|count| u32::try_from(count).ok())
+            .filter(|&count| count > 0)
+            .ok_or(Code::DecodingError)?,
+    };
     let bits_per_sample = match codec {
         FrustbiteCodec::Pcm | FrustbiteCodec::Flac | FrustbiteCodec::Alac => params
             .bits_per_sample
@@ -322,27 +351,40 @@ fn probe(source: &AudioSource, hint: Option<FrustbiteContainer>) -> Result<Probe
     })
 }
 
-/// Opus always plays at 48 kHz; the pre-skip comes from the OpusHead, never `Track::delay`.
+/// What an Opus stream's OpusHead dictates. The rate is always 48 kHz, and the pre-skip and
+/// channel count come from the OpusHead, never from `Track::delay` or the container's channels
+/// (Matroska defaults a missing channel count to 1).
+struct OpusStream {
+    sample_rate: u32,
+    pre_skip: u64,
+    channels: u32,
+}
+
 #[cfg(feature = "opus")]
-fn opus_stream(params: &AudioCodecParameters) -> Result<(u32, u64), Code> {
+fn opus_stream(params: &AudioCodecParameters) -> Result<OpusStream, Code> {
     let extra = params.extra_data.as_deref().ok_or(Code::DecodingError)?;
     let head = crate::opus::OpusHead::parse(extra).map_err(|error| map_error(&error))?;
-    Ok((crate::opus::OUTPUT_RATE, u64::from(head.pre_skip)))
+    Ok(OpusStream {
+        sample_rate: crate::opus::OUTPUT_RATE,
+        pre_skip: u64::from(head.pre_skip),
+        channels: u32::from(head.channels),
+    })
 }
 
 #[cfg(not(feature = "opus"))]
-fn opus_stream(_params: &AudioCodecParameters) -> Result<(u32, u64), Code> {
+fn opus_stream(_params: &AudioCodecParameters) -> Result<OpusStream, Code> {
     Err(Code::UnsupportedFormat)
 }
 
 fn build_info(
     source: &AudioSource,
+    hint: Option<FrustbiteContainer>,
     probed: &Probed,
-    byte_length: usize,
+    data_size: u64,
 ) -> Result<FrustbiteAudioInfo, Code> {
     let total_frames = match probed.known_frames {
         Some(frames) => frames,
-        None => scan_frames(source, probed)?,
+        None => scan_frames(source, hint, probed)?,
     };
     let rate = u64::from(probed.sample_rate);
     let duration_us = total_frames.saturating_mul(1_000_000) / rate.max(1);
@@ -351,7 +393,7 @@ fn build_info(
             * u64::from(probed.channels)
             * u64::from(probed.bits_per_sample)
     } else {
-        (byte_length as u64)
+        data_size
             .saturating_mul(8_000_000)
             .checked_div(duration_us)
             .unwrap_or(0)
@@ -369,18 +411,25 @@ fn build_info(
 }
 
 /// Sums packet durations to the end of the stream without decoding.
-fn scan_frames(source: &AudioSource, probed: &Probed) -> Result<u64, Code> {
-    let mut reader = open_reader(source, None)?;
+fn scan_frames(
+    source: &AudioSource,
+    hint: Option<FrustbiteContainer>,
+    probed: &Probed,
+) -> Result<u64, Code> {
+    let mut reader = open_reader(source, hint)?;
     let time_base = reader
         .tracks()
         .iter()
         .find(|track| track.id == probed.track_id)
-        .and_then(|track| track.time_base);
+        .ok_or(Code::DecodingError)?
+        .time_base;
 
     let mut units: u128 = 0;
+    let mut consecutive_errors = 0u32;
     loop {
         match reader.next_packet() {
             Ok(Some(packet)) => {
+                consecutive_errors = 0;
                 if packet.track_id == probed.track_id {
                     units += u128::from(packet.dur.get());
                 }
@@ -390,7 +439,12 @@ fn scan_frames(source: &AudioSource, probed: &Probed) -> Result<u64, Code> {
             Err(SymphoniaError::IoError(io)) if io.kind() == std::io::ErrorKind::UnexpectedEof => {
                 break;
             }
-            Err(SymphoniaError::DecodeError(_)) if units > 0 => continue,
+            Err(SymphoniaError::DecodeError(_)) if units > 0 => {
+                consecutive_errors += 1;
+                if consecutive_errors >= MAX_CONSECUTIVE_SCAN_ERRORS {
+                    break;
+                }
+            }
             Err(error) => return Err(map_error(&error)),
         }
     }
@@ -554,8 +608,11 @@ mod tests {
 
         #[test]
         fn info_is_cached() {
+            use std::sync::atomic::Ordering;
             let audio = open("tone_vbr_noxing.mp3").unwrap();
-            assert_eq!(audio.info(), audio.info());
+            let first = audio.info().unwrap();
+            assert_eq!(audio.info().unwrap(), first);
+            assert_eq!(audio.info_builds.load(Ordering::SeqCst), 1);
         }
 
         #[test]
@@ -582,5 +639,35 @@ mod tests {
             assert_eq!(from_memory.info(), open("tone.flac").unwrap().info());
             assert_eq!(from_memory.byte_length(), bytes.len());
         }
+    }
+
+    #[cfg(feature = "opus")]
+    #[test]
+    fn opus_channels_come_from_opus_head_not_container() {
+        use symphonia::core::audio::{Channels, Position};
+        use symphonia::core::codecs::audio::well_known::CODEC_ID_OPUS;
+
+        let mut head = b"OpusHead".to_vec();
+        head.extend([1, 2, 0x38, 0x01, 0x80, 0xBB, 0, 0, 0, 0, 0]);
+        let mut params = AudioCodecParameters::new();
+        params
+            .for_codec(CODEC_ID_OPUS)
+            // The container claims mono, as Matroska does when the element is missing.
+            .with_channels(Channels::Positioned(Position::FRONT_CENTER))
+            .with_extra_data(head.into_boxed_slice());
+        let stream = opus_stream(&params).unwrap();
+        assert_eq!(stream.channels, 2);
+        assert_eq!(stream.pre_skip, 312);
+        assert_eq!(stream.sample_rate, 48_000);
+    }
+
+    #[test]
+    fn source_byte_length_counts_resident_bytes() {
+        let bytes = std::fs::read(format!("{FIXTURES}tone.wav")).unwrap();
+        let memory = FrustbiteAudio::open_memory(&bytes, None).unwrap();
+        assert_eq!(memory.byte_length(), bytes.len());
+        assert_eq!(open("tone.wav").unwrap().byte_length(), 0);
+        // The file's bitrate still uses the on-disk size.
+        assert!(open("tone.wav").unwrap().data_size > 0);
     }
 }

@@ -132,7 +132,9 @@ pub unsafe extern "C" fn frustbite_get_info(
     })
 }
 
-/// Size in bytes of the data behind the handle, for memory accounting. Returns 0 for null.
+/// Bytes the handle keeps in memory, for memory accounting: the copied data for
+/// `frustbite_open_memory`, 0 for `frustbite_open_file` (a file handle holds no bytes) and for
+/// null. Does no I/O.
 ///
 /// # Safety
 /// `audio` must be null or a live handle.
@@ -233,7 +235,8 @@ mod tests {
     #[test]
     fn failed_open_leaves_out_untouched() {
         let bytes = std::fs::read(format!("{FIXTURES}corrupt.bin")).unwrap();
-        let mut out: *mut FrustbiteAudio = ptr::null_mut();
+        let sentinel = 0x1234usize as *mut FrustbiteAudio;
+        let mut out = sentinel;
         let code = unsafe {
             frustbite_open_memory(
                 bytes.as_ptr(),
@@ -243,7 +246,35 @@ mod tests {
             )
         };
         assert_ne!(code, FrustbiteErrorCode::Success);
-        assert!(out.is_null());
+        assert_eq!(out, sentinel);
+    }
+
+    #[cfg(feature = "mp3")]
+    #[test]
+    fn failed_get_info_leaves_out_untouched() {
+        // A handle whose info cannot be built: the file vanishes after open, and the duration
+        // scan (MP3 without a header) must re-open it.
+        let dir = std::env::temp_dir().join(format!("frustbite-ffi-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("tone.mp3");
+        std::fs::copy(format!("{FIXTURES}tone_vbr_noxing.mp3"), &path).unwrap();
+        let c_path = CString::new(path.to_str().unwrap()).unwrap();
+        let mut audio: *mut FrustbiteAudio = ptr::null_mut();
+        let sentinel = FrustbiteAudioInfo {
+            container: 0xAAAA,
+            ..zeroed_info()
+        };
+        let mut info = sentinel;
+        unsafe {
+            let code = frustbite_open_file(c_path.as_ptr(), FRUSTBITE_FORMAT_DETECT, &mut audio);
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            std::fs::remove_file(&path).unwrap();
+            let code = frustbite_get_info(audio, &mut info);
+            assert_eq!(code, FrustbiteErrorCode::InvalidPath);
+            assert_eq!(info, sentinel);
+            frustbite_free(audio);
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

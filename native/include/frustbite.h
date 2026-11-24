@@ -252,7 +252,9 @@ FrustbiteErrorCode frustbite_get_info(const struct FrustbiteAudio *audio,
                                       struct FrustbiteAudioInfo *out);
 
 /**
- * Size in bytes of the data behind the handle, for memory accounting. Returns 0 for null.
+ * Bytes the handle keeps in memory, for memory accounting: the copied data for
+ * `frustbite_open_memory`, 0 for `frustbite_open_file` (a file handle holds no bytes) and for
+ * null. Does no I/O.
  *
  * # Safety
  * `audio` must be null or a live handle.
