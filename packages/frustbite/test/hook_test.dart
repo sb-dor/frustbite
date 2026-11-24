@@ -100,6 +100,11 @@ void main() {
     });
   });
 
+  test('appleDeploymentTarget is major.minor', () {
+    expect(appleDeploymentTarget(AppleVersion(13)), '13.0');
+    expect(appleDeploymentTarget(AppleVersion(10, minor: 15)), '10.15');
+  });
+
   group('targets', () {
     test('cover all 12 targets uniquely', () {
       expect(supportedTargets, hasLength(12));
@@ -270,6 +275,55 @@ void main() {
       );
       expect(dir.listSync(), isEmpty);
     });
+
+    test('reuses an existing file whose hash matches', () async {
+      final existing = File('${dir.path}/$fileName')..writeAsBytesSync(payload);
+      final file = await download();
+      expect(file.path, existing.path);
+      expect(requests, 0);
+    });
+
+    test('replaces an existing file whose hash does not match', () async {
+      File('${dir.path}/$fileName').writeAsStringSync('stale');
+      final file = await download();
+      expect(file.readAsBytesSync(), payload);
+      expect(requests, 1);
+    });
+
+    test(
+      'a stalled server fails with a timeout error naming the URL',
+      () async {
+        final silent = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => silent.close());
+        final sockets = <Socket>[];
+        silent.listen(sockets.add); // accept, never answer
+        addTearDown(() {
+          for (final s in sockets) {
+            s.destroy();
+          }
+        });
+        await expectLater(
+          downloadAsset(
+            targetOS: OS.linux,
+            targetArchitecture: Architecture.x64,
+            iOSSdk: null,
+            outputDirectory: dir,
+            hashes: {fileName: payloadHash},
+            uriFor: (name) =>
+                Uri.parse('http://127.0.0.1:${silent.port}/$name'),
+            idleTimeout: const Duration(milliseconds: 300),
+          ),
+          throwsA(
+            isA<HttpException>().having(
+              (e) => e.message,
+              'message',
+              allOf(contains('timed out'), contains(fileName)),
+            ),
+          ),
+        );
+        expect(dir.listSync(), isEmpty);
+      },
+    );
 
     test('rejects non-https, non-loopback URLs', () async {
       await expectLater(

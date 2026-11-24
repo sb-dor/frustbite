@@ -1,3 +1,6 @@
+// Adapted from hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
+// https://github.com/hawkkiller/pixer
+
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
@@ -100,11 +103,20 @@ Map<String, String> _deploymentTargets(BuildInput input) {
   final code = input.config.code;
   return switch (code.targetOS) {
     OS.macOS => {
-      'MACOSX_DEPLOYMENT_TARGET': '${code.macOS.deploymentVersion.major}',
+      'MACOSX_DEPLOYMENT_TARGET': appleDeploymentTarget(
+        code.macOS.deploymentVersion,
+      ),
     },
     OS.iOS => {
-      'IPHONEOS_DEPLOYMENT_TARGET': '${code.iOS.deploymentVersion.major}',
+      'IPHONEOS_DEPLOYMENT_TARGET': appleDeploymentTarget(
+        code.iOS.deploymentVersion,
+      ),
     },
     _ => const {},
   };
 }
+
+/// `major.minor`, for example `10.15` or `13.0`; the toolchains expect a
+/// dotted version, not just the major number.
+String appleDeploymentTarget(AppleVersion version) =>
+    '${version.major}.${version.minor}';

@@ -1,3 +1,6 @@
+// Adapted from hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
+// https://github.com/hawkkiller/pixer
+
 /// The target Android NDK API level for compilation (same as pixer).
 const androidTargetNdkApi = 30;
 

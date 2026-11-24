@@ -1,3 +1,6 @@
+// Adapted from hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
+// https://github.com/hawkkiller/pixer
+
 import 'package:code_assets/code_assets.dart';
 
 typedef SupportedTarget = (OS os, Architecture architecture, IOSSdk? iOSSdk);

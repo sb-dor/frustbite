@@ -1,3 +1,6 @@
+// Adapted from hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
+// https://github.com/hawkkiller/pixer
+
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
@@ -7,7 +10,8 @@ import 'package:hooks/hooks.dart';
 
 void main(List<String> args) async {
   await build(args, (input, output) async {
-    // Web builds do not ask for code assets; `config.code` must not be read.
+    // A web build requests no code assets at all; reading `config.code` there
+    // would throw, so bail out first.
     if (!input.config.buildCodeAssets) return;
     final codeConfig = input.config.code;
 

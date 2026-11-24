@@ -1,3 +1,7 @@
+// Adapted from hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
+// https://github.com/hawkkiller/pixer
+
+import 'dart:async';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
@@ -32,6 +36,11 @@ String assetFileName(
 /// Throws a [StateError] before any network access when [hashes] has no entry
 /// for the asset, because it could not be verified. [uriFor] and [hashes]
 /// exist for tests; by default the GitHub release and [assetHashes] are used.
+///
+/// A file already at the target path whose sha256 matches is reused without
+/// any network access. The connection attempt fails after [connectTimeout],
+/// and the transfer fails when no data arrives for [idleTimeout]; both
+/// surface as an [HttpException] naming the URL.
 Future<File> downloadAsset({
   required OS targetOS,
   required Architecture targetArchitecture,
@@ -39,13 +48,20 @@ Future<File> downloadAsset({
   required Directory outputDirectory,
   Uri Function(String fileName) uriFor = downloadUri,
   Map<String, String> hashes = assetHashes,
+  Duration connectTimeout = const Duration(seconds: 30),
+  Duration idleTimeout = const Duration(seconds: 60),
 }) async {
   final fileName = assetFileName(targetOS, targetArchitecture, iOSSdk);
-  _expectedHash(fileName, hashes);
+  final expectedHash = _expectedHash(fileName, hashes);
 
-  final client = HttpClient();
+  final library = File.fromUri(outputDirectory.uri.resolve(fileName));
+  if (library.existsSync() && await hashAsset(library) == expectedHash) {
+    return library;
+  }
+
+  final client = HttpClient()..connectionTimeout = connectTimeout;
+  final uri = uriFor(fileName);
   try {
-    final uri = uriFor(fileName);
     if (uri.scheme != 'https' && !_isLoopback(uri.host)) {
       throw ArgumentError.value(
         uri,
@@ -54,7 +70,7 @@ Future<File> downloadAsset({
       );
     }
     final request = await client.getUrl(uri);
-    final response = await request.close();
+    final response = await request.close().timeout(idleTimeout);
 
     if (response.statusCode != HttpStatus.ok) {
       await response.drain<void>();
@@ -64,19 +80,27 @@ Future<File> downloadAsset({
       );
     }
 
-    final library = File.fromUri(outputDirectory.uri.resolve(fileName));
     final partial = File('${library.path}.part');
     await partial.create(recursive: true);
     try {
-      await response.pipe(partial.openWrite());
+      await response.timeout(idleTimeout).pipe(partial.openWrite());
+      if (library.existsSync()) library.deleteSync();
       await partial.rename(library.path);
     } catch (_) {
       if (partial.existsSync()) partial.deleteSync();
       rethrow;
     }
     return library;
+  } on TimeoutException {
+    throw HttpException(
+      'Downloading $uri timed out: no data for ${idleTimeout.inSeconds} s',
+      uri: uri,
+    );
+  } on SocketException catch (e) {
+    // Connection failures, including the connect timeout, name the URL.
+    throw HttpException('Downloading $uri failed: ${e.message}', uri: uri);
   } finally {
-    client.close();
+    client.close(force: true);
   }
 }
 
