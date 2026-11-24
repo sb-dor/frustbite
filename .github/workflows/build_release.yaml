@@ -147,12 +147,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Linux assets build on ubuntu-22.04 (glibc 2.35) so they run on older distros.
+          # Linux assets are cross-built with cargo-zigbuild against glibc 2.17, so
+          # any runner works and they load on older distros.
           - { target: android_armv7, runner: ubuntu-latest }
           - { target: android_arm64, runner: ubuntu-latest }
           - { target: android_x86_64, runner: ubuntu-latest }
-          - { target: linux_aarch64, runner: ubuntu-22.04 }
-          - { target: linux_x86_64, runner: ubuntu-22.04 }
+          - { target: linux_aarch64, runner: ubuntu-latest }
+          - { target: linux_x86_64, runner: ubuntu-latest }
           - { target: ios_arm64, runner: macos-latest }
           - { target: ios_sim_arm64, runner: macos-latest }
           - { target: ios_sim_x86_64, runner: macos-latest }
@@ -175,10 +176,13 @@ jobs:
       - run: rustup toolchain install
         working-directory: native/
 
-      # The linker is configured in native/.cargo/config.toml.
-      - name: Install the Linux arm64 cross toolchain
-        if: matrix.target == 'linux_aarch64'
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      # glibc 2.17 floor: tool/build.dart runs `cargo zigbuild --target
+      # <triple>.2.17` when FRUSTBITE_ZIGBUILD=1. Versions are pinned.
+      - name: Install zig and cargo-zigbuild
+        if: startsWith(matrix.target, 'linux_')
+        run: |
+          pip3 install ziglang==0.17.1
+          cargo install cargo-zigbuild --version 0.24.1 --locked
 
       # Uses the NDK preinstalled on GitHub's ubuntu runners; tool/build.dart
       # reads ANDROID_NDK_ROOT.
@@ -187,11 +191,28 @@ jobs:
         run: echo "ANDROID_NDK_ROOT=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
 
       - run: dart pub get
-      - run: dart tool/build.dart libs ${{ matrix.target }}
+      # Writes libs/<target>/<one file name>.
+      - name: Build
+        env:
+          FRUSTBITE_ZIGBUILD: ${{ startsWith(matrix.target, 'linux_') && '1' || '0' }}
+        run: dart tool/build.dart libs ${{ matrix.target }}
+
+      # Git Bash on every runner OS. Windows needs llvm-objdump (preinstalled
+      # with LLVM on windows-latest, C:\Program Files\LLVM\bin) or dumpbin.
+      - name: Verify the binary
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          files=(libs/"$TARGET"/*)
+          [ "${#files[@]}" -eq 1 ] || { echo "::error::Expected one file in libs/$TARGET"; exit 1; }
+          ../../tool/verify_native.sh "${files[0]}" "$TARGET"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: asset-${{ matrix.target }}
+          # Keeps the libs/<target>/<file> layout inside the artifact.
           path: packages/frustbite/libs/
           if-no-files-found: error
 
@@ -207,11 +228,28 @@ jobs:
         with:
           pattern: asset-*
           merge-multiple: true
-          path: assets/
+          path: libs/
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: wasm
           path: assets/
+      # The artifacts hold libs/<target>/<one file name>. Release assets need
+      # unique names, so each file becomes libfrustbite_<target>.<ext> (the
+      # names the release has always used).
+      - name: Flatten the libraries into release assets
+        run: |
+          for dir in libs/*/; do
+            target="$(basename "$dir")"
+            for file in "$dir"*; do
+              case "$file" in
+                *.dylib) name="libfrustbite_${target}.dylib" ;;
+                *.dll) name="frustbite_${target}.dll" ;;
+                *.so) name="libfrustbite_${target}.so" ;;
+                *) echo "::error::Unexpected file $file"; exit 1 ;;
+              esac
+              cp "$file" "assets/$name"
+            done
+          done
       # Third-party notices must ship with the binaries (the rust job checks
       # the file is up to date with Cargo.lock).
       - name: Add the third-party licenses
