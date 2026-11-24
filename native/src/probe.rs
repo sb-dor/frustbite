@@ -186,8 +186,12 @@ pub struct FrustbiteAudio {
     data_size: u64,
     /// Only successful results are cached, so a transient failure can be retried.
     info: OnceLock<FrustbiteAudioInfo>,
+    /// Tags and cover, read together on first use; only `Ok` is cached.
+    tags: OnceLock<crate::tags::TagData>,
     #[cfg(test)]
     info_builds: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    pub(crate) tags_builds: std::sync::atomic::AtomicUsize,
 }
 
 impl FrustbiteAudio {
@@ -213,8 +217,11 @@ impl FrustbiteAudio {
             probed,
             data_size,
             info: OnceLock::new(),
+            tags: OnceLock::new(),
             #[cfg(test)]
             info_builds: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            tags_builds: std::sync::atomic::AtomicUsize::new(0),
         })
     }
 
@@ -229,6 +236,10 @@ impl FrustbiteAudio {
 
     pub(crate) fn hint(&self) -> Option<FrustbiteContainer> {
         self.hint
+    }
+
+    pub(crate) fn tags_cache(&self) -> &OnceLock<crate::tags::TagData> {
+        &self.tags
     }
 
     pub(crate) fn probed(&self) -> &Probed {

@@ -17,6 +17,7 @@ const _leafSymbols = {
   'frustbite_abi_version',
   'frustbite_source_byte_length',
   'frustbite_free_f32',
+  'frustbite_free_bytes',
 };
 
 Future<void> main() async {

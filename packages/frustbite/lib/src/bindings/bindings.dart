@@ -48,14 +48,48 @@ external int frustbite_decode(
 @ffi.Native<ffi.Void Function(ffi.Pointer<FrustbiteAudio>)>()
 external void frustbite_free(ffi.Pointer<FrustbiteAudio> audio);
 
-/// Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the `*out_len` it returned.
-/// Passing null is a no-op.
+/// Releases a buffer from `frustbite_get_tags_json` or `frustbite_get_cover`. `len` must be
+/// the length it returned. Passing null is a no-op.
 ///
 /// # Safety
-/// `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with the same `len`, not yet
-/// freed.
+/// `ptr` must be null or a buffer returned by one of those functions with the same `len`, not
+/// yet freed.
+@ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Uint8>, ffi.Size)>(isLeaf: true)
+external void frustbite_free_bytes(ffi.Pointer<ffi.Uint8> ptr, int len);
+
+/// Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the
+/// `*out_len` it returned. Passing null is a no-op.
+///
+/// # Safety
+/// `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with
+/// the same `len`, not yet freed.
 @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Float>, ffi.Size)>(isLeaf: true)
 external void frustbite_free_f32(ffi.Pointer<ffi.Float> ptr, int len);
+
+/// Reads the embedded cover art (the front cover, else the first picture). On success `*out`
+/// receives `*out_len` image bytes and `*out_mime` receives `*out_mime_len` bytes of the MIME
+/// type as UTF-8 (no NUL), both to release with `frustbite_free_bytes`. With no cover, both
+/// lengths are 0 and both pointers null, still `Success`. Does I/O on the first call (then
+/// cached): call it off the UI thread.
+///
+/// # Safety
+/// `audio` must be a live handle; every out-pointer must be valid for a write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<FrustbiteAudio>,
+    ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external int frustbite_get_cover(
+  ffi.Pointer<FrustbiteAudio> audio,
+  ffi.Pointer<ffi.Pointer<ffi.Uint8>> out,
+  ffi.Pointer<ffi.Size> out_len,
+  ffi.Pointer<ffi.Pointer<ffi.Uint8>> out_mime,
+  ffi.Pointer<ffi.Size> out_mime_len,
+);
 
 /// Describes the audio. The result is cached after the first call.
 ///
@@ -70,6 +104,27 @@ external void frustbite_free_f32(ffi.Pointer<ffi.Float> ptr, int len);
 external int frustbite_get_info(
   ffi.Pointer<FrustbiteAudio> audio,
   ffi.Pointer<FrustbiteAudioInfo> out,
+);
+
+/// Reads the tags as UTF-8 JSON with the keys `title`, `artist`, `album`, `albumArtist`,
+/// `genre`, `comment` (string or null) and `year`, `track`, `trackTotal`, `disc`, `discTotal`
+/// (integer or null). A file without readable tags gives all nulls, not an error. On success
+/// `*out` receives `*out_len` bytes (no NUL) to release with `frustbite_free_bytes`. Does I/O
+/// on the first call (then cached): call it off the UI thread.
+///
+/// # Safety
+/// `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<FrustbiteAudio>,
+    ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external int frustbite_get_tags_json(
+  ffi.Pointer<FrustbiteAudio> audio,
+  ffi.Pointer<ffi.Pointer<ffi.Uint8>> out,
+  ffi.Pointer<ffi.Size> out_len,
 );
 
 /// Opens audio from a file. `utf8_path` is a NUL-terminated UTF-8 path. Not available on wasm.

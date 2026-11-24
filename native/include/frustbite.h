@@ -326,15 +326,54 @@ FrustbiteErrorCode frustbite_waveform(const struct FrustbiteAudio *audio,
                                       size_t *out_len);
 
 /**
- * Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the `*out_len` it returned.
- * Passing null is a no-op.
+ * Releases a buffer from `frustbite_decode` or `frustbite_waveform`. `len` must be the
+ * `*out_len` it returned. Passing null is a no-op.
  *
  * # Safety
- * `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with the same `len`, not yet
- * freed.
+ * `ptr` must be null or a buffer returned by `frustbite_decode` or `frustbite_waveform` with
+ * the same `len`, not yet freed.
  */
-void frustbite_free_f32(float *ptr,
-                        size_t len);
+void frustbite_free_f32(float *ptr, size_t len);
+
+/**
+ * Reads the tags as UTF-8 JSON with the keys `title`, `artist`, `album`, `albumArtist`,
+ * `genre`, `comment` (string or null) and `year`, `track`, `trackTotal`, `disc`, `discTotal`
+ * (integer or null). A file without readable tags gives all nulls, not an error. On success
+ * `*out` receives `*out_len` bytes (no NUL) to release with `frustbite_free_bytes`. Does I/O
+ * on the first call (then cached): call it off the UI thread.
+ *
+ * # Safety
+ * `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+ */
+FrustbiteErrorCode frustbite_get_tags_json(const struct FrustbiteAudio *audio,
+                                           uint8_t **out,
+                                           size_t *out_len);
+
+/**
+ * Reads the embedded cover art (the front cover, else the first picture). On success `*out`
+ * receives `*out_len` image bytes and `*out_mime` receives `*out_mime_len` bytes of the MIME
+ * type as UTF-8 (no NUL), both to release with `frustbite_free_bytes`. With no cover, both
+ * lengths are 0 and both pointers null, still `Success`. Does I/O on the first call (then
+ * cached): call it off the UI thread.
+ *
+ * # Safety
+ * `audio` must be a live handle; every out-pointer must be valid for a write.
+ */
+FrustbiteErrorCode frustbite_get_cover(const struct FrustbiteAudio *audio,
+                                       uint8_t **out,
+                                       size_t *out_len,
+                                       uint8_t **out_mime,
+                                       size_t *out_mime_len);
+
+/**
+ * Releases a buffer from `frustbite_get_tags_json` or `frustbite_get_cover`. `len` must be
+ * the length it returned. Passing null is a no-op.
+ *
+ * # Safety
+ * `ptr` must be null or a buffer returned by one of those functions with the same `len`, not
+ * yet freed.
+ */
+void frustbite_free_bytes(uint8_t *ptr, size_t len);
 
 #ifdef __cplusplus
 }  // extern "C"

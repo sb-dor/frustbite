@@ -251,6 +251,112 @@ pub unsafe extern "C" fn frustbite_free_f32(ptr: *mut f32, len: usize) {
     }));
 }
 
+/// Hands `bytes` to the caller as a raw buffer; empty becomes null. Free it with
+/// `frustbite_free_bytes` and the same length.
+fn leak_bytes(bytes: Vec<u8>) -> (*mut u8, usize) {
+    let len = bytes.len();
+    if len == 0 {
+        (std::ptr::null_mut(), 0)
+    } else {
+        (Box::into_raw(bytes.into_boxed_slice()).cast::<u8>(), len)
+    }
+}
+
+/// Reads the tags as UTF-8 JSON with the keys `title`, `artist`, `album`, `albumArtist`,
+/// `genre`, `comment` (string or null) and `year`, `track`, `trackTotal`, `disc`, `discTotal`
+/// (integer or null). A file without readable tags gives all nulls, not an error. On success
+/// `*out` receives `*out_len` bytes (no NUL) to release with `frustbite_free_bytes`. Does I/O
+/// on the first call (then cached): call it off the UI thread.
+///
+/// # Safety
+/// `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_get_tags_json(
+    audio: *const FrustbiteAudio,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> FrustbiteErrorCode {
+    guarded(|| {
+        if audio.is_null() || out.is_null() || out_len.is_null() {
+            return FrustbiteErrorCode::InvalidPointer;
+        }
+        match unsafe { &*audio }.tag_data() {
+            Ok(data) => {
+                let (ptr, len) = leak_bytes(data.json.clone());
+                unsafe {
+                    out.write(ptr);
+                    out_len.write(len);
+                }
+                FrustbiteErrorCode::Success
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// Reads the embedded cover art (the front cover, else the first picture). On success `*out`
+/// receives `*out_len` image bytes and `*out_mime` receives `*out_mime_len` bytes of the MIME
+/// type as UTF-8 (no NUL), both to release with `frustbite_free_bytes`. With no cover, both
+/// lengths are 0 and both pointers null, still `Success`. Does I/O on the first call (then
+/// cached): call it off the UI thread.
+///
+/// # Safety
+/// `audio` must be a live handle; every out-pointer must be valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_get_cover(
+    audio: *const FrustbiteAudio,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+    out_mime: *mut *mut u8,
+    out_mime_len: *mut usize,
+) -> FrustbiteErrorCode {
+    guarded(|| {
+        if audio.is_null()
+            || out.is_null()
+            || out_len.is_null()
+            || out_mime.is_null()
+            || out_mime_len.is_null()
+        {
+            return FrustbiteErrorCode::InvalidPointer;
+        }
+        match unsafe { &*audio }.tag_data() {
+            Ok(data) => {
+                let (image, mime) = match &data.cover {
+                    Some(cover) => (
+                        leak_bytes(cover.data.clone()),
+                        leak_bytes(cover.mime.clone().into_bytes()),
+                    ),
+                    None => ((std::ptr::null_mut(), 0), (std::ptr::null_mut(), 0)),
+                };
+                unsafe {
+                    out.write(image.0);
+                    out_len.write(image.1);
+                    out_mime.write(mime.0);
+                    out_mime_len.write(mime.1);
+                }
+                FrustbiteErrorCode::Success
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// Releases a buffer from `frustbite_get_tags_json` or `frustbite_get_cover`. `len` must be
+/// the length it returned. Passing null is a no-op.
+///
+/// # Safety
+/// `ptr` must be null or a buffer returned by one of those functions with the same `len`, not
+/// yet freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_free_bytes(ptr: *mut u8, len: usize) {
+    if ptr.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) });
+    }));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use std::ffi::CString;
@@ -584,6 +690,107 @@ pub(crate) mod tests {
             let code = frustbite_waveform(audio, 10, 0, false, &mut values, ptr::null_mut());
             assert_eq!(code, FrustbiteErrorCode::InvalidPointer);
             assert_eq!((values, len), (sentinel, 777));
+            frustbite_free(audio);
+        }
+    }
+
+    fn open_fixture(name: &str) -> *mut FrustbiteAudio {
+        let path = CString::new(format!("{FIXTURES}{name}")).unwrap();
+        let mut out: *mut FrustbiteAudio = ptr::null_mut();
+        let code = unsafe { frustbite_open_file(path.as_ptr(), FRUSTBITE_FORMAT_DETECT, &mut out) };
+        assert_eq!(code, FrustbiteErrorCode::Success);
+        out
+    }
+
+    #[cfg(feature = "mp3")]
+    #[test]
+    fn tags_and_cover_round_trip() {
+        let audio = open_fixture("tone.mp3");
+        let (mut json, mut json_len) = (ptr::null_mut(), 0usize);
+        let (mut image, mut image_len) = (ptr::null_mut(), 0usize);
+        let (mut mime, mut mime_len) = (ptr::null_mut(), 0usize);
+        unsafe {
+            let code = frustbite_get_tags_json(audio, &mut json, &mut json_len);
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            let text = std::str::from_utf8(std::slice::from_raw_parts(json, json_len)).unwrap();
+            assert!(text.contains("\"title\":\"frustbite tone\""), "{text}");
+            frustbite_free_bytes(json, json_len);
+
+            let code =
+                frustbite_get_cover(audio, &mut image, &mut image_len, &mut mime, &mut mime_len);
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            assert_eq!(std::slice::from_raw_parts(mime, mime_len), b"image/png");
+            assert!(std::slice::from_raw_parts(image, image_len).starts_with(&[0x89, b'P']));
+            frustbite_free_bytes(image, image_len);
+            frustbite_free_bytes(mime, mime_len);
+            frustbite_free_bytes(ptr::null_mut(), 0);
+            frustbite_free(audio);
+        }
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn cover_absent_is_success_with_nulls() {
+        let audio = open_fixture("notags.wav");
+        let sentinel = 0x1234usize as *mut u8;
+        let (mut image, mut image_len) = (sentinel, 9usize);
+        let (mut mime, mut mime_len) = (sentinel, 9usize);
+        unsafe {
+            let code =
+                frustbite_get_cover(audio, &mut image, &mut image_len, &mut mime, &mut mime_len);
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            assert_eq!(
+                (image, image_len, mime, mime_len),
+                (ptr::null_mut(), 0, ptr::null_mut(), 0)
+            );
+            frustbite_free(audio);
+        }
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn tags_and_cover_errors_leave_out_untouched() {
+        let audio = open_fixture("notags.wav");
+        let sentinel = 0x1234usize as *mut u8;
+        let (mut a, mut a_len, mut b, mut b_len) = (sentinel, 7usize, sentinel, 7usize);
+        let invalid = FrustbiteErrorCode::InvalidPointer;
+        unsafe {
+            assert_eq!(
+                frustbite_get_tags_json(ptr::null(), &mut a, &mut a_len),
+                invalid
+            );
+            assert_eq!(
+                frustbite_get_tags_json(audio, ptr::null_mut(), &mut a_len),
+                invalid
+            );
+            assert_eq!(
+                frustbite_get_tags_json(audio, &mut a, ptr::null_mut()),
+                invalid
+            );
+            assert_eq!((a, a_len), (sentinel, 7));
+
+            let n = ptr::null_mut();
+            assert_eq!(
+                frustbite_get_cover(ptr::null(), &mut a, &mut a_len, &mut b, &mut b_len),
+                invalid
+            );
+            assert_eq!(
+                frustbite_get_cover(audio, n, &mut a_len, &mut b, &mut b_len),
+                invalid
+            );
+            assert_eq!(
+                frustbite_get_cover(audio, &mut a, n.cast(), &mut b, &mut b_len),
+                invalid
+            );
+            assert_eq!(
+                frustbite_get_cover(audio, &mut a, &mut a_len, n.cast(), &mut b_len),
+                invalid
+            );
+            assert_eq!(
+                frustbite_get_cover(audio, &mut a, &mut a_len, &mut b, n.cast()),
+                invalid
+            );
+            assert_eq!((a, a_len, b, b_len), (sentinel, 7, sentinel, 7));
             frustbite_free(audio);
         }
     }

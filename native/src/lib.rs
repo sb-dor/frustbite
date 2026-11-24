@@ -8,6 +8,7 @@ pub mod ffi;
 mod opus;
 pub mod probe;
 mod source;
+mod tags;
 #[cfg(target_arch = "wasm32")]
 mod wasm_alloc;
 pub mod waveform;
