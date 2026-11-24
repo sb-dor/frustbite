@@ -5,6 +5,7 @@
 
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use lofty::config::ParseOptions;
 use lofty::file::{FileType, TaggedFile, TaggedFileExt};
@@ -62,15 +63,21 @@ fn lofty_type(container: FrustbiteContainer) -> Option<FileType> {
     }
 }
 
+/// Parses the tags, or `None` when they are unreadable. A lofty panic on a hostile file counts
+/// as unreadable, so odd tags never fail the call (on wasm32 a panic still traps).
 fn read_tagged<R: Read + Seek>(reader: R, hint: Option<FrustbiteContainer>) -> Option<TaggedFile> {
-    let options = ParseOptions::new().read_properties(false);
-    let mut probe = Probe::new(reader).options(options).guess_file_type().ok()?;
-    if probe.file_type().is_none()
-        && let Some(file_type) = hint.and_then(lofty_type)
-    {
-        probe = probe.set_file_type(file_type);
-    }
-    probe.read().ok()
+    catch_unwind(AssertUnwindSafe(|| {
+        let options = ParseOptions::new().read_properties(false);
+        let mut probe = Probe::new(reader).options(options).guess_file_type().ok()?;
+        if probe.file_type().is_none()
+            && let Some(file_type) = hint.and_then(lofty_type)
+        {
+            probe = probe.set_file_type(file_type);
+        }
+        probe.read().ok()
+    }))
+    .ok()
+    .flatten()
 }
 
 /// The primary tag first, then the others in file order.
@@ -93,6 +100,14 @@ fn text(tags: &[&Tag], get: impl Fn(&Tag) -> Option<String>) -> Option<String> {
 
 fn number(tags: &[&Tag], get: impl Fn(&Tag) -> Option<u32>) -> Option<u32> {
     tags.iter().find_map(|tag| get(tag))
+}
+
+/// The first positive year: a zero year (an unset date in some taggers) falls back to the
+/// next tag.
+fn year(tags: &[&Tag]) -> Option<u32> {
+    number(tags, |t| {
+        t.date().map(|d| u32::from(d.year)).filter(|&y| y > 0)
+    })
 }
 
 fn sniff_mime(data: &[u8]) -> &'static str {
@@ -135,7 +150,7 @@ fn extract(file: &TaggedFile) -> TagData {
         album_artist: text(tags, key(ItemKey::AlbumArtist)),
         genre: text(tags, |t| t.genre().map(|s| s.into_owned())),
         comment: text(tags, |t| t.comment().map(|s| s.into_owned())),
-        year: number(tags, |t| t.date().map(|d| u32::from(d.year))).filter(|&y| y > 0),
+        year: year(tags),
         track: number(tags, |t| t.track()),
         track_total: number(tags, |t| t.track_total()),
         disc: number(tags, |t| t.disk()),
@@ -295,6 +310,48 @@ mod tests {
         audio.tag_data().unwrap();
         audio.tag_data().unwrap();
         assert_eq!(audio.tags_builds.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn year_zero_in_primary_tag_falls_back_to_next_tag() {
+        use lofty::tag::TagType;
+        use lofty::tag::items::Timestamp;
+        let date = |year| Timestamp {
+            year,
+            ..Timestamp::default()
+        };
+        let mut primary = Tag::new(TagType::Id3v2);
+        primary.set_date(date(0));
+        assert_eq!(primary.date().map(|d| d.year), Some(0), "precondition");
+        let mut other = Tag::new(TagType::Id3v1);
+        other.set_date(date(2026));
+        assert_eq!(year(&[&primary, &other]), Some(2026));
+        assert_eq!(year(&[&primary]), None);
+    }
+
+    /// A reader that panics, standing in for a lofty panic on a hostile file.
+    struct PanickingReader;
+
+    impl Read for PanickingReader {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            panic!("simulated lofty panic");
+        }
+    }
+
+    impl Seek for PanickingReader {
+        fn seek(&mut self, _: std::io::SeekFrom) -> std::io::Result<u64> {
+            panic!("simulated lofty panic");
+        }
+    }
+
+    #[test]
+    fn panic_while_reading_tags_gives_no_tags() {
+        // Silence the default panic message for the deliberate panic.
+        let hook = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let tagged = read_tagged(PanickingReader, None);
+        std::panic::set_hook(hook);
+        assert!(tagged.is_none());
     }
 
     #[cfg(feature = "wav")]

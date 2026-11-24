@@ -251,14 +251,20 @@ pub unsafe extern "C" fn frustbite_free_f32(ptr: *mut f32, len: usize) {
     }));
 }
 
-/// Hands `bytes` to the caller as a raw buffer; empty becomes null. Free it with
-/// `frustbite_free_bytes` and the same length.
-fn leak_bytes(bytes: Vec<u8>) -> (*mut u8, usize) {
-    let len = bytes.len();
-    if len == 0 {
-        (std::ptr::null_mut(), 0)
-    } else {
-        (Box::into_raw(bytes.into_boxed_slice()).cast::<u8>(), len)
+/// Boxes `bytes` for handing to the caller; empty becomes `None`.
+fn boxed_bytes(bytes: Vec<u8>) -> Option<Box<[u8]>> {
+    (!bytes.is_empty()).then(|| bytes.into_boxed_slice())
+}
+
+/// Hands a buffer to the caller as a raw pointer and length; `None` becomes null and 0. Free it
+/// with `frustbite_free_bytes` and the same length.
+fn leak_bytes(bytes: Option<Box<[u8]>>) -> (*mut u8, usize) {
+    match bytes {
+        Some(bytes) => {
+            let len = bytes.len();
+            (Box::into_raw(bytes).cast::<u8>(), len)
+        }
+        None => (std::ptr::null_mut(), 0),
     }
 }
 
@@ -282,7 +288,7 @@ pub unsafe extern "C" fn frustbite_get_tags_json(
         }
         match unsafe { &*audio }.tag_data() {
             Ok(data) => {
-                let (ptr, len) = leak_bytes(data.json.clone());
+                let (ptr, len) = leak_bytes(boxed_bytes(data.json.clone()));
                 unsafe {
                     out.write(ptr);
                     out_len.write(len);
@@ -321,13 +327,16 @@ pub unsafe extern "C" fn frustbite_get_cover(
         }
         match unsafe { &*audio }.tag_data() {
             Ok(data) => {
+                // Both buffers exist before either is leaked, so a failure while building the
+                // second cannot leak the first.
                 let (image, mime) = match &data.cover {
                     Some(cover) => (
-                        leak_bytes(cover.data.clone()),
-                        leak_bytes(cover.mime.clone().into_bytes()),
+                        boxed_bytes(cover.data.clone()),
+                        boxed_bytes(cover.mime.clone().into_bytes()),
                     ),
-                    None => ((std::ptr::null_mut(), 0), (std::ptr::null_mut(), 0)),
+                    None => (None, None),
                 };
+                let (image, mime) = (leak_bytes(image), leak_bytes(mime));
                 unsafe {
                     out.write(image.0);
                     out_len.write(image.1);
