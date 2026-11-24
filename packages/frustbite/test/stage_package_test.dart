@@ -366,6 +366,14 @@ void main() {
       'sb-dor/frustbite',
     );
     expect(githubRepo('repository: https://github.com/a/b/\n'), 'a/b');
+    for (final url in [
+      'https://github.com/a/b',
+      'https://github.com/a/b/',
+      'https://github.com/a/b.git',
+      'https://github.com/a/b.git/',
+    ]) {
+      expect(githubRepo('repository: $url\n'), 'a/b', reason: url);
+    }
     expect(() => githubRepo('name: x'), throwsA(isA<StageException>()));
     expect(pubspecVersion('name: x\nversion: 1.2.3\n'), '1.2.3');
   });
