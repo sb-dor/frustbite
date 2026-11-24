@@ -14,7 +14,9 @@ import 'package:frustbite/frustbite.dart';
 /// reset (and already includes `dart run` start-up), so each child instead
 /// samples `currentRss` during the run. The parent generates the mp3 once
 /// (with ffmpeg, in its own process) and then measures each mode in a fresh
-/// child process, re-invoking this script with `--mode=<name>`. Exits 1 if any mode exceeds the
+/// child process, re-invoking this script with `--mode=<name>`.
+/// Exits 1 if any mode exceeds the threshold or a child reports no result,
+/// and 2 if ffmpeg is unavailable.
 /// threshold or a child reports no result, 2 if ffmpeg is unavailable.
 const maxDeltaMb = 50.0;
 const _mb = 1024 * 1024;
