@@ -50,7 +50,7 @@ CI runs the same checks on every pull request.
 ## Rules
 
 - **Generated files are never edited by hand**: `bindings.dart`, `enums.dart`,
-  `hashes.dart` and `native/include/frustbite.h`. Change the Rust source or
+  and `native/include/frustbite.h`. Change the Rust source or
   `tool/generate_bindings.dart` and regenerate with
   `dart tool/generate_bindings.dart` (from `packages/frustbite/`).
 - **ABI bump**: `FRUSTBITE_ABI_VERSION` in `native/src/ffi.rs` and
@@ -67,8 +67,8 @@ CI runs the same checks on every pull request.
 ## Releases
 
 Maintainers release by pushing a tag `frustbite-assets-vX.Y.Z` on `main`. The
-tag must match the `pubspec.yaml` version, `lib/src/hook/version.dart` and a
+tag must match the `pubspec.yaml` version and a
 `## X.Y.Z` section in the CHANGELOG. The `build_release.yaml` workflow then
 builds the 12 native libraries and `frustbite.wasm` and publishes them as a
-GitHub Release, and `hashes.dart` is regenerated from it with
-`dart tool/generate_asset_hashes.dart --tag <tag>`.
+GitHub Release (the package bundles those libraries under `prebuilt/`; the
+docs pass in a later task covers the details).

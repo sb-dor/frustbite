@@ -8,3 +8,6 @@ build/
 .vscode/
 .idea/
 pubspec.lock
+
+# Native libraries bundled by tool/stage_package.dart (staging only, never committed)
+packages/frustbite/prebuilt/
