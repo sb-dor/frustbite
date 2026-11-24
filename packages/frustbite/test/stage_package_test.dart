@@ -231,4 +231,142 @@ void main() {
       expect(rules.ignores('src/build'), isFalse); // `build/` is dir-only
     });
   });
+
+  group('release assets', () {
+    test('the 12 asset names are pinned', () {
+      expect(stageTargets.map((t) => t.releaseAsset).toList(), [
+        'libfrustbite_android_armv7.so',
+        'libfrustbite_android_arm64.so',
+        'libfrustbite_android_x86_64.so',
+        'libfrustbite_ios_arm64.dylib',
+        'libfrustbite_ios_sim_arm64.dylib',
+        'libfrustbite_ios_sim_x86_64.dylib',
+        'libfrustbite_linux_aarch64.so',
+        'libfrustbite_linux_x86_64.so',
+        'libfrustbite_macos_arm64.dylib',
+        'libfrustbite_macos_x86_64.dylib',
+        'frustbite_windows_arm64.dll',
+        'frustbite_windows_x86_64.dll',
+      ]);
+    });
+
+    Directory fakeAssets() {
+      final dir = Directory(p.join(scratch.path, 'assets'))..createSync();
+      final sums = <String, String>{};
+      for (final t in stageTargets) {
+        final bytes = utf8.encode('release ${t.name}');
+        File(p.join(dir.path, t.releaseAsset)).writeAsBytesSync(bytes);
+        sums[t.key] = sha256.convert(bytes).toString();
+      }
+      File(
+        p.join(dir.path, 'checksums.json'),
+      ).writeAsStringSync(jsonEncode(sums));
+      return dir;
+    }
+
+    Directory tree() => Directory(p.join(scratch.path, 'tree'));
+
+    test('un-flattens into the build.dart layout', () async {
+      unflattenRelease('t', fakeAssets(), tree(), allowPartial: false);
+      final checksums = await stage(tree());
+      expect(checksums, hasLength(12));
+    });
+
+    test('a mismatching checksum fails', () {
+      final dir = fakeAssets();
+      File(
+        p.join(dir.path, 'libfrustbite_linux_x86_64.so'),
+      ).writeAsStringSync('x');
+      expect(
+        () => unflattenRelease('t', dir, tree(), allowPartial: false),
+        throwsA(
+          isA<StageException>().having(
+            (e) => e.message,
+            'message',
+            contains('linux-x64/libfrustbite.so does not match'),
+          ),
+        ),
+      );
+    });
+
+    test('a checksums.json entry without an asset fails', () {
+      final dir = fakeAssets();
+      final file = File(p.join(dir.path, 'checksums.json'));
+      final sums = jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
+      file.writeAsStringSync(
+        jsonEncode({...sums, 'plan9-x64/libfrustbite.so': 'a'}),
+      );
+      expect(
+        () => unflattenRelease('t', dir, tree(), allowPartial: false),
+        throwsA(isA<StageException>()),
+      );
+    });
+
+    test('a missing asset or checksums.json fails', () {
+      final dir = fakeAssets();
+      File(p.join(dir.path, 'frustbite_windows_arm64.dll')).deleteSync();
+      expect(
+        () => unflattenRelease('t', dir, tree(), allowPartial: false),
+        throwsA(isA<StageException>()),
+      );
+      File(p.join(dir.path, 'checksums.json')).deleteSync();
+      expect(
+        () => unflattenRelease('t', dir, tree(), allowPartial: true),
+        throwsA(isA<StageException>()),
+      );
+    });
+  });
+
+  group('checkReleaseSource', () {
+    void check({
+      String tag = 'frustbite-v0.0.2',
+      String? head = 'abc',
+      String? tagCommit = 'abc',
+      String porcelain = '',
+      String version = '0.0.2',
+    }) => checkReleaseSource(
+      tag: tag,
+      head: head,
+      tagCommit: tagCommit,
+      porcelain: porcelain,
+      pubspecVersion: version,
+    );
+    Matcher fails(String text) => throwsA(
+      isA<StageException>().having((e) => e.message, 'm', contains(text)),
+    );
+
+    test('passes for the clean checkout of the tag', () => check());
+    test(
+      'HEAD must be the tag commit',
+      () => expect(() => check(head: 'def'), fails('is not the commit')),
+    );
+    test(
+      'an unknown tag fails',
+      () => expect(() => check(tagCommit: null), fails('does not exist')),
+    );
+    test(
+      'uncommitted changes fail',
+      () => expect(
+        () => check(porcelain: ' M native/src/ffi.rs\n'),
+        fails('uncommitted'),
+      ),
+    );
+    test('the pubspec version must match the tag', () {
+      expect(
+        () => check(version: '0.0.3'),
+        fails('does not match the pubspec'),
+      );
+      expect(() => check(tag: 'v0.0.2'), fails('does not match the pubspec'));
+    });
+  });
+
+  test('the repository comes from the pubspec', () {
+    expect(
+      githubRepo('name: x\nrepository: https://github.com/sb-dor/frustbite\n'),
+      'sb-dor/frustbite',
+    );
+    expect(githubRepo('repository: https://github.com/a/b/\n'), 'a/b');
+    expect(() => githubRepo('name: x'), throwsA(isA<StageException>()));
+    expect(pubspecVersion('name: x\nversion: 1.2.3\n'), '1.2.3');
+  });
 }
