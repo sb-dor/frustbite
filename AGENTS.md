@@ -49,7 +49,27 @@ dart tool/build_wasm.dart test/frustbite.wasm
 dart test -p chrome test/frustbite_wasm_test.dart
 dart test -p chrome --compiler dart2wasm test/frustbite_wasm_test.dart
 
-# Benchmarks: added in a later stage
+# Benchmarks (from packages/benchmark/; needs ffmpeg with libmp3lame for the inputs)
+./tool/generate_inputs.sh
+dart run bin/main.dart           # full run: writes benchmark_results.json, updates chart.html
+dart run bin/main.dart --quick   # smoke test, writes nothing
+
+# Showcase (from packages/showcase/; Flutter app, needs a Rust toolchain)
+flutter run -d macos
+flutter test
+# web: dart tool/build_wasm.dart ../showcase/web/frustbite.wasm (from packages/frustbite/), then
+flutter run -d chrome
+
+# Docs site (from docs/; Blume, Node >= 22.12)
+npm install
+npm run docs:dev
+npm run docs:build && npm run docs:check
+
+# Prebuilt native assets for this host (output dir may be relative)
+scripts/build.sh [output-dir] [target...]
+
+# Package dry run (from packages/frustbite/)
+dart pub publish --dry-run
 ```
 
 ## Rules

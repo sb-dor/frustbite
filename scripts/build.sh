@@ -10,6 +10,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 out="${1:-$root/build/assets}"
 [ "$#" -gt 0 ] && shift
+# The build runs from packages/frustbite, so a relative dir must be resolved first.
+mkdir -p "$out"
+out="$(cd "$out" && pwd)"
 
 if [ "$#" -gt 0 ]; then
   targets=("$@")

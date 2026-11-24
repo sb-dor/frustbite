@@ -17,7 +17,6 @@ import 'package:frustbite/frustbite.dart';
 /// child process, re-invoking this script with `--mode=<name>`.
 /// Exits 1 if any mode exceeds the threshold or a child reports no result,
 /// and 2 if ffmpeg is unavailable.
-/// threshold or a child reports no result, 2 if ffmpeg is unavailable.
 const maxDeltaMb = 50.0;
 const _mb = 1024 * 1024;
 
@@ -91,7 +90,7 @@ Future<int> _runAll() async {
       stderr.write(r.stderr);
       // A child that exits 0 without reporting must not pass.
       final reported = RegExp(
-        '^RESULT mode=$mode delta_mb=[0-9.]+\$',
+        '^RESULT mode=$mode delta_mb=-?[0-9.]+\$',
         multiLine: true,
       ).hasMatch('${r.stdout}');
       if (r.exitCode != 0 || !reported) {

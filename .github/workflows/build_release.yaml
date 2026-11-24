@@ -44,7 +44,7 @@ jobs:
             || fail "Tag $GITHUB_REF_NAME does not match pubspec version $version"
           grep -qx "const version = '$GITHUB_REF_NAME';" lib/src/hook/version.dart \
             || fail "lib/src/hook/version.dart does not point at $GITHUB_REF_NAME"
-          grep -qx "## $version" CHANGELOG.md \
+          grep -Fqx "## $version" CHANGELOG.md \
             || fail "CHANGELOG.md has no '## $version' section"
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
             || fail "Release tags must point at a commit on main"
@@ -145,11 +145,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Linux assets build on ubuntu-22.04 (glibc 2.35) so they run on older distros.
           - { target: android_armv7, runner: ubuntu-latest }
           - { target: android_arm64, runner: ubuntu-latest }
           - { target: android_x86_64, runner: ubuntu-latest }
-          - { target: linux_aarch64, runner: ubuntu-latest }
-          - { target: linux_x86_64, runner: ubuntu-latest }
+          - { target: linux_aarch64, runner: ubuntu-22.04 }
+          - { target: linux_x86_64, runner: ubuntu-22.04 }
           - { target: ios_arm64, runner: macos-latest }
           - { target: ios_sim_arm64, runner: macos-latest }
           - { target: ios_sim_x86_64, runner: macos-latest }
@@ -209,10 +210,29 @@ jobs:
           name: wasm
           path: assets/
       - name: Check the asset list
+        env:
+          # Keep in sync with the build matrix targets.
+          TARGETS: >-
+            android_armv7 android_arm64 android_x86_64 linux_aarch64 linux_x86_64
+            ios_arm64 ios_sim_arm64 ios_sim_x86_64 macos_arm64 macos_x86_64
+            windows_arm64 windows_x86_64
         run: |
           ls -l assets/
-          [ "$(find assets -type f | wc -l)" -eq 13 ] \
-            || { echo "::error::Expected 12 dylibs and frustbite.wasm"; exit 1; }
+          expected=(frustbite.wasm)
+          for target in $TARGETS; do
+            case "$target" in
+              ios_* | macos_*) expected+=("libfrustbite_${target}.dylib") ;;
+              windows_*) expected+=("frustbite_${target}.dll") ;;
+              *) expected+=("libfrustbite_${target}.so") ;;
+            esac
+          done
+          missing=0
+          for name in "${expected[@]}"; do
+            [ -f "assets/$name" ] || { echo "::error::Missing asset $name"; missing=1; }
+          done
+          [ "$(find assets -type f | wc -l)" -eq "${#expected[@]}" ] \
+            || { echo "::error::Unexpected extra assets"; missing=1; }
+          exit "$missing"
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
