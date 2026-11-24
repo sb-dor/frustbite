@@ -46,6 +46,13 @@ Future<File> downloadAsset({
   final client = HttpClient();
   try {
     final uri = uriFor(fileName);
+    if (uri.scheme != 'https' && !_isLoopback(uri.host)) {
+      throw ArgumentError.value(
+        uri,
+        'uri',
+        'Assets must be fetched over https',
+      );
+    }
     final request = await client.getUrl(uri);
     final response = await request.close();
 
@@ -58,8 +65,15 @@ Future<File> downloadAsset({
     }
 
     final library = File.fromUri(outputDirectory.uri.resolve(fileName));
-    await library.create(recursive: true);
-    await response.pipe(library.openWrite());
+    final partial = File('${library.path}.part');
+    await partial.create(recursive: true);
+    try {
+      await response.pipe(partial.openWrite());
+      await partial.rename(library.path);
+    } catch (_) {
+      if (partial.existsSync()) partial.deleteSync();
+      rethrow;
+    }
     return library;
   } finally {
     client.close();
@@ -98,3 +112,7 @@ String _expectedHash(String fileName, Map<String, String> hashes) {
   }
   return hash;
 }
+
+bool _isLoopback(String host) =>
+    host == 'localhost' ||
+    (InternetAddress.tryParse(host)?.isLoopback ?? false);

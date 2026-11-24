@@ -1,3 +1,4 @@
+import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 import 'package:native_toolchain_rust/native_toolchain_rust.dart';
 
@@ -52,10 +53,27 @@ Future<void> runLocalBuild(
     cratePath: '../../native',
     enableDefaultFeatures: formats == null,
     features: formats ?? const [],
+    // native_toolchain_rust does not set deployment targets, so pass the
+    // minimum OS versions the hook was configured with.
     extraCargoEnvironmentVariables: {
+      ..._deploymentTargets(input),
       'CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER': 'aarch64-linux-gnu-gcc',
     },
   );
 
   await rustBuilder.run(input: input, output: output);
+}
+
+Map<String, String> _deploymentTargets(BuildInput input) {
+  if (!input.config.buildCodeAssets) return const {};
+  final code = input.config.code;
+  return switch (code.targetOS) {
+    OS.macOS => {
+      'MACOSX_DEPLOYMENT_TARGET': '${code.macOS.deploymentVersion.major}',
+    },
+    OS.iOS => {
+      'IPHONEOS_DEPLOYMENT_TARGET': '${code.iOS.deploymentVersion.major}',
+    },
+    _ => const {},
+  };
 }

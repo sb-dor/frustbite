@@ -104,6 +104,9 @@ const assetHashes = <String, String>{
   }
   buffer.writeln('};');
   await file.writeAsString(buffer.toString());
-  await Process.run(Platform.executable, ['format', file.path]);
+  final format = await Process.run(Platform.executable, ['format', file.path]);
+  if (format.exitCode != 0) {
+    throw StateError('dart format failed: ${format.stderr}');
+  }
   stdout.writeln('Wrote ${file.path}');
 }

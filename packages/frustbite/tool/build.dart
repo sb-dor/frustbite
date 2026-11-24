@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:frustbite/src/hook/download_asset.dart';
 import 'package:frustbite/src/hook/get_android_compiler_config.dart';
+import 'package:frustbite/src/hook/target_versions.dart';
 import 'package:frustbite/src/hook/targets.dart';
 
 /// Builds release dynamic libraries for the given targets and copies them,
@@ -42,7 +43,11 @@ Future<void> main(List<String> args) async {
   for (final name in selected) {
     final (os, architecture, iOSSdk) = _targets[name]!;
     final triple = _rustTriple(os, architecture, iOSSdk);
-    final environment = <String, String>{};
+    final environment = <String, String>{
+      // Honour the minimum OS versions (see target_versions.dart).
+      if (os == OS.macOS) 'MACOSX_DEPLOYMENT_TARGET': '$macOSTargetVersion',
+      if (os == OS.iOS) 'IPHONEOS_DEPLOYMENT_TARGET': '$iOSTargetVersion',
+    };
     if (os == OS.android) {
       final linker = getAndroidCompilerConfig(architecture).linker.toFilePath();
       environment['CARGO_TARGET_${triple.toUpperCase().replaceAll('-', '_')}_LINKER'] =
@@ -69,6 +74,10 @@ Future<void> main(List<String> args) async {
     final target = File.fromUri(
       outputDir.uri.resolve(assetFileName(os, architecture, iOSSdk)),
     );
+    if (!built.existsSync()) {
+      stderr.writeln('Build succeeded but ${built.path} does not exist');
+      exit(1);
+    }
     await built.copy(target.path);
     stdout.writeln('  -> ${target.path}');
   }

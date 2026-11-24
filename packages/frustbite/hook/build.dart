@@ -7,16 +7,9 @@ import 'package:hooks/hooks.dart';
 
 void main(List<String> args) async {
   await build(args, (input, output) async {
-    // The code config is only available when the build targets code assets;
-    // accessing it throws on web (a plain Exception with no dedicated type or
-    // flag in the hooks API to check beforehand), so treat that as "no native
-    // assets needed".
-    final CodeConfig codeConfig;
-    try {
-      codeConfig = input.config.code;
-    } catch (_) {
-      return;
-    }
+    // Web builds do not ask for code assets; `config.code` must not be read.
+    if (!input.config.buildCodeAssets) return;
+    final codeConfig = input.config.code;
 
     final formats = readFormats(input);
     // Prebuilt binaries include every format, so a custom set needs a source

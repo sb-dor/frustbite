@@ -26,7 +26,6 @@ CCompilerConfig getAndroidCompilerConfig(Architecture architecture) {
     Architecture.arm => 'armv7a-linux-androideabi',
     Architecture.arm64 => 'aarch64-linux-android',
     Architecture.x64 => 'x86_64-linux-android',
-    Architecture.ia32 => 'i686-linux-android',
     _ => throw UnsupportedError(
       'Unsupported Android architecture: $architecture',
     ),

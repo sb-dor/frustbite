@@ -202,6 +202,59 @@ void main() {
       );
     });
 
+    test('failed downloads leave no file behind', () async {
+      await expectLater(
+        downloadAsset(
+          targetOS: OS.linux,
+          targetArchitecture: Architecture.x64,
+          iOSSdk: null,
+          outputDirectory: dir,
+          hashes: {fileName: payloadHash},
+          uriFor: (_) => serverUri('missing.so'),
+        ),
+        throwsA(isA<HttpException>()),
+      );
+      expect(dir.listSync(), isEmpty);
+    });
+
+    test('a body that fails midway leaves no file behind', () async {
+      final broken = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => broken.close());
+      broken.listen((socket) async {
+        socket.add(
+          ascii.encode('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nabc'),
+        );
+        await socket.flush();
+        socket.destroy();
+      });
+      await expectLater(
+        downloadAsset(
+          targetOS: OS.linux,
+          targetArchitecture: Architecture.x64,
+          iOSSdk: null,
+          outputDirectory: dir,
+          hashes: {fileName: payloadHash},
+          uriFor: (name) => Uri.parse('http://127.0.0.1:${broken.port}/$name'),
+        ),
+        throwsA(anything),
+      );
+      expect(dir.listSync(), isEmpty);
+    });
+
+    test('rejects non-https, non-loopback URLs', () async {
+      await expectLater(
+        downloadAsset(
+          targetOS: OS.linux,
+          targetArchitecture: Architecture.x64,
+          iOSSdk: null,
+          outputDirectory: dir,
+          hashes: {fileName: payloadHash},
+          uriFor: (name) => Uri.parse('http://example.com/$name'),
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('missing hash throws StateError before any network call', () async {
       await expectLater(
         download(hashes: const {}),
