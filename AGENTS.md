@@ -37,6 +37,9 @@ dart tool/generate_bindings.dart
 dart analyze --fatal-infos
 dart test
 
+# Memory acceptance: 1-hour mp3 waveform stays within 50 MB RSS (needs ffmpeg; ~1 min)
+dart run tool/memory_check.dart
+
 # wasm: check the crate still builds for the web target (from native/)
 cargo clippy --target wasm32-unknown-unknown -- -D warnings
 
