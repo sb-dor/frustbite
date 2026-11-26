@@ -5,6 +5,8 @@
 [![Docs](https://img.shields.io/badge/docs-sb--dor.github.io%2Ffrustbite-informational)](https://sb-dor.github.io/frustbite/)
 [![pub package](https://img.shields.io/pub/v/frustbite.svg)](https://pub.dev/packages/frustbite)
 
+<img src="https://raw.githubusercontent.com/sb-dor/frustbite/main/packages/frustbite/doc/showcase.webp" alt="frustbite: the showcase app on iPhone in light and dark mode, with stream info, tags, cover art and a waveform, next to an editing example" width="100%">
+
 Read and edit audio from pure Dart: stream info, tags, cover art, waveforms and
 decoded PCM; trim, join, mix, fade, normalize, resample and save as WAV. A Rust
 crate does the work through FFI and Dart build hooks on native platforms and
@@ -16,10 +18,9 @@ Full documentation: <https://sb-dor.github.io/frustbite/>.
 
 ## Showcase
 
-The [Flutter showcase](https://github.com/sb-dor/frustbite/tree/main/packages/showcase)
-shows info, tags and a waveform:
-
-<img src="https://raw.githubusercontent.com/sb-dor/frustbite/main/docs/images/showcase-ios.png" alt="frustbite showcase on iPhone" width="300">
+The [Flutter showcase](https://github.com/sb-dor/frustbite/tree/main/packages/showcase),
+pictured at the top, opens an audio file or a bundled sample and shows its
+stream info, tags, cover art and waveform.
 
 ## Install
 
