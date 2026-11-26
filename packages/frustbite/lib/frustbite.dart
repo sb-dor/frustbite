@@ -1,12 +1,13 @@
 /// Pure-Dart audio library backed by Rust.
 library;
 
-export 'src/audio_enums.dart' show AudioCodec, AudioContainer, WaveformMode;
+export 'src/audio_enums.dart'
+    show AudioCodec, AudioContainer, WavFormat, WaveformMode;
 export 'src/audio_info.dart' show AudioInfo;
 export 'src/audio_pcm.dart' show AudioPcm;
 export 'src/audio_tags.dart' show AudioCover, AudioTags;
 export 'src/enums.dart' show FrustbiteErrorCode;
-export 'src/frustbite_base.dart' show Frustbite;
+export 'src/frustbite_base.dart' show AudioEdit, Frustbite;
 export 'src/frustbite_exception.dart'
     show
         DecodingException,
@@ -16,4 +17,5 @@ export 'src/frustbite_exception.dart'
         InvalidPathException,
         UnknownFrustbiteException,
         UnsupportedFormatException;
+export 'src/silence_range.dart' show SilenceRange;
 export 'src/waveform.dart' show Waveform;

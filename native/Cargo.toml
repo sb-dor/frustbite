@@ -12,7 +12,10 @@ crate-type = ["staticlib", "cdylib"]
 # Pure-Rust demuxers and decoders. Codecs and containers are enabled per Cargo feature below.
 # Pinned exactly: probe.rs works around symphonia-core 0.6.1 packet.rs:340 (MP3 trims left in
 # `dur`); an upstream fix would make that workaround subtract twice. Re-check on any bump.
-symphonia = { version = "=0.6.1", default-features = false, features = ["id3v1", "id3v2"] }
+# The WAV demuxer and PCM decoder are always on: an edited result (`frustbite_render`) is an
+# in-memory float WAV that must reopen even in a `formats: [mp3]` build. The `wav` feature
+# below is kept as a name for the format list.
+symphonia = { version = "=0.6.1", default-features = false, features = ["id3v1", "id3v2", "wav", "pcm"] }
 # Also pinned directly: the buggy `PacketBuilder` lives in symphonia-core, which `symphonia`
 # alone would let float within 0.6.x.
 symphonia-core = "=0.6.1"
@@ -20,6 +23,9 @@ opus-pure = { version = "=0.2.5", optional = true, default-features = false }
 lofty = "0.25.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Sample rate conversion for editing (`resample`, and `append`/`mix` of mismatched sources):
+# the synchronous FFT resampler, pure Rust.
+rubato = { version = "5.1.0", default-features = false, features = ["fft_resampler"] }
 
 # Keep in sync with `supportedFormats` in packages/frustbite/lib/src/hook/local_build.dart.
 [features]

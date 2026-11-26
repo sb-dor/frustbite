@@ -4,7 +4,7 @@ frustbite (Rust core, pure-Dart API) against the existing Dart audio packages.
 Speedup is `baseline time / frustbite time`: above 1x frustbite is faster,
 below 1x it is **slower**. Rows where frustbite is slower are kept as measured.
 
-- Date: 2026-11-24
+- Date: 2026-11-26
 - Machine: Apple M3 Pro, 11 cores (macOS, arm64)
 - Dart: 3.14.0 (stable)
 - Input: 180 s, 44.1 kHz stereo synthetic music-like signal (chord tones, pink
@@ -20,21 +20,27 @@ Median of 10 runs after 2 warm-up runs, in milliseconds (raw numbers in
 
 | Operation | frustbite | baseline | Speedup |
 | --- | --- | --- | --- |
-| info (mp3) | 0.96 ms | — (no baseline) | — |
-| decode mp3 | 95.4 ms | `audio_decode`: 83.2 ms | 0.87x |
-| decode mp3 | 95.4 ms | `glint_audio_pure`: 7955.9 ms | 83.39x |
-| decode Ogg Vorbis | 106.7 ms | `audio_decode`: 124.7 ms | 1.17x |
-| decode FLAC | 78.3 ms | — (no baseline supports FLAC) | — |
-| decode WAV | 24.9 ms | `wav`: 225.6 ms | 9.05x |
-| decode WAV | 24.9 ms | `audio_decode`: 29.2 ms | 1.17x |
-| waveform mp3, 1000 buckets | 93.1 ms | `audio_decode` decode + Dart bucket loop: 88.7 ms | 0.95x |
-| tags + cover (mp3) | 0.10 ms | `audio_metadata_reader`: 0.09 ms | 0.94x |
+| info (mp3) | 0.87 ms | — (no baseline) | — |
+| decode mp3 | 98.0 ms | `audio_decode`: 88.8 ms | 0.91x |
+| decode mp3 | 98.0 ms | `glint_audio_pure`: 7964.9 ms | 81.29x |
+| decode Ogg Vorbis | 106.2 ms | `audio_decode`: 134.5 ms | 1.27x |
+| decode FLAC | 82.7 ms | — (no baseline supports FLAC) | — |
+| decode WAV | 25.7 ms | `wav`: 234.9 ms | 9.13x |
+| decode WAV | 25.7 ms | `audio_decode`: 29.8 ms | 1.16x |
+| waveform mp3, 1000 buckets | 99.2 ms | `audio_decode` decode + Dart bucket loop: 95.5 ms | 0.96x |
+| tags + cover (mp3) | 0.10 ms | `audio_metadata_reader`: 0.12 ms | 1.21x |
+| resample WAV to 48 kHz (float32 WAV out) | 175.7 ms | — (no baseline) | — |
+| resample WAV to 16 kHz mono (s16 WAV out) | 90.3 ms | — (no baseline) | — |
+| edit WAV: trim, fades, normalize (s16 WAV out) | 36.6 ms | — (no baseline) | — |
+| encode WAV: read s16, write s16 | 34.5 ms | `wav` (`Wav.read` + `write`): 449.7 ms | 13.04x |
 
 Reading the table honestly: against `audio_decode`, which is also native code,
-frustbite is roughly on par. It is slower on mp3 decode (0.87x) and waveform
-(0.95x), faster on Vorbis (1.17x) and WAV (1.17x). Against the pure-Dart decoders the
-gap is large (83x for mp3, 9x for WAV). On tags, `audio_metadata_reader` is
-marginally faster (0.94x, within timer noise at this scale).
+frustbite is roughly on par. It is slower on mp3 decode (0.91x) and waveform
+(0.96x), faster on Vorbis (1.27x) and WAV (1.16x). Against the pure-Dart
+packages the gap is large (81x for mp3 decode, 9x for WAV decode, 13x for a WAV
+read and write). On tags the two are within timer noise at this scale. The
+editing rows have no baseline: no Dart package resamples or edits PCM in a
+comparable way.
 
 ## Baselines
 
@@ -75,6 +81,12 @@ the last 18 months (`wav` last in July 2025). frustbite returns interleaved
   peak-per-bucket, but they are not literally the same algorithm: the baseline
   computes exact per-bucket peaks over the raw samples, while frustbite
   summarises 256-frame blocks and then maps those blocks onto buckets.
+- Editing rows (`resample_wav_48k`, `resample_wav_16k_mono`, `edit_wav`,
+  `encode_wav`): each run opens the WAV, then one `edit()...toWav()` call
+  decodes it, applies the operations and encodes WAV bytes. The resampler is
+  rubato's synchronous FFT resampler. `encode_wav` is `toWav()` with no
+  operations, against `wav`'s `Wav.read(bytes).write()`: both decode s16 and
+  write s16 bytes.
 - `tags`: frustbite `Frustbite.fromFile(path)` then `tags` + `cover`, opened
   fresh per operation, against `audio_metadata_reader` reading the same file.
   Both sides do file I/O.
@@ -85,7 +97,7 @@ Caveats that favour or disfavour either side:
 
 - `tags_mp3`: both sides read the same file from disk (warm OS page cache) and
   extract the cover. At sub-millisecond scale the result is sensitive to timer
-  noise; treat 0.94x as a tie.
+  noise; treat 1.21x as a tie.
 - `info_mp3` has no baseline: no listed package exposes a comparable header
   scan (`audio_decode` has `audioInfo`, but the brief's table does not pair it
   with this case).

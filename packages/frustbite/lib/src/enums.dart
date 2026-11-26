@@ -130,3 +130,25 @@ enum FrustbiteWaveformMode {
     ),
   );
 }
+
+/// Sample format of a written WAV. Values are part of the ABI.
+enum FrustbiteWavFormat {
+  /// 16-bit signed integer PCM.
+  pcm16(0),
+
+  /// 24-bit signed integer PCM.
+  pcm24(1),
+
+  /// 32-bit IEEE float, values outside [-1, 1] kept as they are.
+  float32(2);
+
+  const FrustbiteWavFormat(this.value);
+
+  final int value;
+
+  static FrustbiteWavFormat fromValue(int value) => values.firstWhere(
+    (e) => e.value == value,
+    orElse: () =>
+        throw ArgumentError.value(value, 'value', 'Unknown FrustbiteWavFormat'),
+  );
+}

@@ -21,6 +21,19 @@ enum WaveformMode {
   rms,
 }
 
+/// Sample format of a written WAV file.
+enum WavFormat {
+  /// 16-bit integer PCM: the most compatible. Values outside [-1, 1] clip.
+  pcm16,
+
+  /// 24-bit integer PCM. Values outside [-1, 1] clip.
+  pcm24,
+
+  /// 32-bit float: lossless for the edited signal, including values outside
+  /// [-1, 1].
+  float32,
+}
+
 /// `FRUSTBITE_FORMAT_DETECT`: no container hint, detect from the content.
 /// Shared by both backends; a test pins it to the generated bindings.
 const formatDetectWire = 0xFFFFFFFF;
@@ -85,4 +98,12 @@ extension WaveformModeWire on WaveformMode {
         FrustbiteWaveformMode.peak => WaveformMode.peak,
         FrustbiteWaveformMode.rms => WaveformMode.rms,
       };
+}
+
+extension WavFormatWire on WavFormat {
+  int get wireValue => switch (this) {
+    WavFormat.pcm16 => FrustbiteWavFormat.pcm16,
+    WavFormat.pcm24 => FrustbiteWavFormat.pcm24,
+    WavFormat.float32 => FrustbiteWavFormat.float32,
+  }.value;
 }

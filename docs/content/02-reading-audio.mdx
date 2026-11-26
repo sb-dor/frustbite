@@ -95,12 +95,12 @@ Frustbite is compared with other Dart audio packages in the repository's
 
 | Operation | Frustbite | Baseline | Speedup |
 | --- | --- | --- | --- |
-| decode mp3 | 95.4 ms | `audio_decode`: 83.2 ms | 0.87x |
-| decode mp3 | 95.4 ms | `glint_audio_pure` (pure Dart): 7955.9 ms | 83.39x |
-| decode Ogg Vorbis | 106.7 ms | `audio_decode`: 124.7 ms | 1.17x |
-| decode WAV | 24.9 ms | `wav` (pure Dart): 225.6 ms | 9.05x |
-| waveform mp3, 1000 buckets | 93.1 ms | `audio_decode` + Dart loop: 88.7 ms | 0.95x |
-| tags + cover (mp3) | 0.10 ms | `audio_metadata_reader`: 0.09 ms | 0.94x |
+| decode mp3 | 98.0 ms | `audio_decode`: 88.8 ms | 0.91x |
+| decode mp3 | 98.0 ms | `glint_audio_pure` (pure Dart): 7964.9 ms | 81.29x |
+| decode Ogg Vorbis | 106.2 ms | `audio_decode`: 134.5 ms | 1.27x |
+| decode WAV | 25.7 ms | `wav` (pure Dart): 234.9 ms | 9.13x |
+| waveform mp3, 1000 buckets | 99.2 ms | `audio_decode` + Dart loop: 95.5 ms | 0.96x |
+| tags + cover (mp3) | 0.10 ms | `audio_metadata_reader`: 0.12 ms | 1.21x |
 
 Against the native `audio_decode`, Frustbite is roughly on par and slower on
 mp3 decode. Against pure-Dart decoders the gap is large. Single machine,

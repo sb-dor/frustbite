@@ -4,6 +4,7 @@ import '../audio_enums.dart';
 import '../audio_info.dart';
 import '../audio_pcm.dart';
 import '../audio_tags.dart';
+import '../silence_range.dart';
 import '../waveform.dart';
 import 'wasm_runtime.dart';
 
@@ -106,12 +107,64 @@ final class BackendAudio {
 
   Future<AudioPcm> decodeAsync() => Future(decode);
 
+  /// The handles of [sources], which must live in this object's instance.
+  List<int> _handles(List<BackendAudio> sources) => [
+    for (final source in sources)
+      if (identical(source._wasm, _wasm))
+        source._handle
+      else
+        throw StateError(
+          'Cannot combine audio opened before Frustbite.initialize() '
+          'reloaded the WebAssembly module with audio opened after it',
+        ),
+  ];
+
+  BackendAudio render(List<BackendAudio> sources, Uint8List ops) =>
+      BackendAudio._(_wasm, _wasm.render(_handle, _handles(sources), ops));
+
+  Future<BackendAudio> renderAsync(List<BackendAudio> sources, Uint8List ops) =>
+      Future(() => render(sources, ops));
+
+  Uint8List renderWav(
+    List<BackendAudio> sources,
+    Uint8List ops,
+    WavFormat format,
+  ) => _wasm.renderWav(_handle, _handles(sources), ops, format.wireValue);
+
+  Future<Uint8List> renderWavAsync(
+    List<BackendAudio> sources,
+    Uint8List ops,
+    WavFormat format,
+  ) => Future(() => renderWav(sources, ops, format));
+
+  List<SilenceRange> detectSilence(double thresholdDb, int minDurationMs) =>
+      _wasm.detectSilence(_handle, thresholdDb, minDurationMs);
+
+  Future<List<SilenceRange>> detectSilenceAsync(
+    double thresholdDb,
+    int minDurationMs,
+  ) => Future(() => detectSilence(thresholdDb, minDurationMs));
+
+  /// Throws [UnsupportedError]: the web has no file system.
+  static void ensureSaveSupported() => throw UnsupportedError(_noSave);
+
+  /// Throws [UnsupportedError]: the web has no file system.
+  static void writeFile(String path, Uint8List bytes) =>
+      throw UnsupportedError(_noSave);
+
+  static Future<void> writeFileAsync(String path, Uint8List bytes) =>
+      throw UnsupportedError(_noSave);
+
   /// Frees the handle; a no-op on a trapped instance.
   void dispose() {
     _finalizer.detach(this);
     _wasm.free(_handle);
   }
 }
+
+const _noSave =
+    'saveWav is unavailable on the web; use toWav and hand the bytes to the '
+    'browser (a download or an upload)';
 
 const _noFiles =
     'Frustbite.fromFile is unavailable on the web; use Frustbite.fromMemory';

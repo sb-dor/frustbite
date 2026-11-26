@@ -1,3 +1,27 @@
+## Unreleased
+
+Editing (stage 2).
+
+- `audio.edit()` returns an `AudioEdit`: a lazy, immutable chain of `trim`,
+  `gain`, `normalize` (peak, default -1 dBFS), `fadeIn`, `fadeOut`,
+  `resample` (FFT resampler, 1 to 768000 Hz), `toMono`, `toStereo`,
+  `trimSilence`, `append` (optional equal-power crossfade) and `mix` (gain and
+  offset). `Frustbite.concat([...], crossfade: ...)` joins sources. Sources of
+  another sample rate or channel count are converted automatically.
+- Terminals run the chain in one native call: `render()` (a new `Frustbite`
+  held as 32-bit float WAV in memory), `toWav()` and `saveWav(path)`, each with
+  an async form on a background isolate.
+- WAV output (`WavFormat.pcm16`, `pcm24`, `float32`): `audio.toWav()` and
+  `audio.saveWav(path)` also convert any supported format to WAV. `saveWav` is
+  unavailable on the web.
+- `audio.detectSilence(thresholdDb:, minDuration:)` returns `SilenceRange`s,
+  decoding without keeping the PCM; `detectSilenceAsync`.
+- ABI version 2 (new exports `frustbite_render`, `frustbite_render_wav`,
+  `frustbite_detect_silence`, `frustbite_free_u64`): a library built for 0.0.2
+  is refused with a clear `StateError`.
+- New Rust dependency: `rubato` 5.1 (MIT OR Apache-2.0) and its pure-Rust
+  dependencies. The native libraries grow by about 0.5 MB each.
+
 ## 0.0.2
 
 Distribution: the native libraries now ship inside the package.

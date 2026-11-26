@@ -193,6 +193,7 @@ void main() {
       'corrupt.bin',
       'notags.wav',
       'click.wav',
+      'silence.flac',
     ]) {
       fixtures[name] = await fixture(name);
     }
@@ -554,6 +555,63 @@ void main() {
       expect(pcm.samples[0], 0.25);
       expect(pcm.samples[200], -0.25);
       expect(pcm.samples[15875999], -0.25);
+    });
+
+    group('editing', () {
+      test('render: trim, mono, resample, normalize', () {
+        final tone = open('tone.wav');
+        final out = tone
+            .edit()
+            .trim(end: const Duration(seconds: 1))
+            .toMono()
+            .resample(16000)
+            .normalize(peakDb: -3)
+            .render();
+        addTearDown(out.dispose);
+        expect(out.info.channels, 1);
+        expect(out.info.sampleRate, 16000);
+        expect((out.info.totalFrames - 16000).abs(), lessThanOrEqualTo(1));
+        final peak = out.decode().samples.fold<double>(
+          0,
+          (max, x) => x.abs() > max ? x.abs() : max,
+        );
+        expect(peak, closeTo(0.7079, 1e-4));
+        expect(tone.info.channels, 2);
+      });
+
+      test('concat with a crossfade and mix', () {
+        final tone = open('tone.wav');
+        final click = open('click.wav');
+        final out = Frustbite.concat(
+          [tone, tone],
+          crossfade: const Duration(seconds: 1),
+        ).mix(click, gainDb: -6).render();
+        addTearDown(out.dispose);
+        expect(out.info.totalFrames, 2 * 132300 - 44100);
+      });
+
+      test('toWav round trip and detectSilence', () async {
+        final tone = open('tone.wav');
+        final wav = Frustbite.fromMemory(tone.toWav());
+        addTearDown(wav.dispose);
+        expect(wav.decode().samples, tone.decode().samples);
+        expect(await tone.toWavAsync(format: WavFormat.float32), isNotEmpty);
+        final silence = open(
+          'silence.flac',
+        ).detectSilence(minDuration: const Duration(milliseconds: 100));
+        expect(silence, hasLength(1));
+        expect(silence.single.start, Duration.zero);
+        expect(tone.detectSilence(), isEmpty);
+      });
+
+      test('saveWav is unsupported; bad parameters keep their type', () {
+        final tone = open('tone.wav');
+        expect(() => tone.saveWav('out.wav'), throwsUnsupportedError);
+        expect(
+          () => tone.edit().resample(0),
+          throwsA(isA<InvalidParameterException>()),
+        );
+      });
     });
 
     test('many open and dispose cycles keep working', () {

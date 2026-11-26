@@ -1,5 +1,5 @@
 /// Must match `frustbite_abi_version` in the Rust engine.
-const frustbiteAbiVersion = 1;
+const frustbiteAbiVersion = 2;
 
 /// Throws [StateError] when the loaded native library does not match this package.
 void checkFrustbiteAbi(int actual) {

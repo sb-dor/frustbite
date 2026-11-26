@@ -9,6 +9,7 @@ import '../audio_pcm.dart';
 import '../audio_tags.dart';
 import '../enums.dart';
 import '../frustbite_exception.dart';
+import '../silence_range.dart';
 import '../waveform.dart';
 
 @JS('WebAssembly.instantiate')
@@ -142,6 +143,40 @@ extension type _Exports._(JSObject _) implements JSObject {
 
   @JS('frustbite_free_bytes')
   external void freeBytes(int ptr, int len);
+
+  @JS('frustbite_render')
+  external int render(
+    int audio,
+    int sources,
+    int sourcesLen,
+    int ops,
+    int opsLen,
+    int out,
+  );
+
+  @JS('frustbite_render_wav')
+  external int renderWav(
+    int audio,
+    int sources,
+    int sourcesLen,
+    int ops,
+    int opsLen,
+    int format,
+    int out,
+    int outLen,
+  );
+
+  @JS('frustbite_detect_silence')
+  external int detectSilence(
+    int audio,
+    double thresholdDb,
+    int minDurationMs,
+    int out,
+    int outLen,
+  );
+
+  @JS('frustbite_free_u64')
+  external void freeU64(int ptr, int len);
 }
 
 /// `FrustbiteAudioInfo` on wasm32 (`#[repr(C)]`): six `u32`, then two `u64`.
@@ -375,6 +410,128 @@ final class WasmRuntime {
       sampleRate: sampleRate,
       channels: channels,
     );
+  });
+
+  /// Runs [call] with one block holding two out slots, the [sources] handles
+  /// and the [ops] bytes: `[out | outLen | sources... | ops...]`. [call]
+  /// gets the block, the sources pointer (0 when empty) and the ops pointer
+  /// (0 when empty).
+  T _withRenderBlock<T>(
+    List<int> sources,
+    Uint8List ops,
+    T Function(int block, int sourcesPtr, int opsPtr) call,
+  ) {
+    final sourcesOffset = 2 * _word;
+    final opsOffset = sourcesOffset + sources.length * _word;
+    return _withAlloc(opsOffset + ops.length, _word, (block) {
+      final view = ByteData.view(_memory.toDart, block, opsOffset);
+      for (var i = 0; i < sources.length; i++) {
+        view.setUint32(sourcesOffset + i * _word, sources[i], Endian.little);
+      }
+      if (ops.isNotEmpty) {
+        JSUint8Array(_memory, block + opsOffset, ops.length).setFrom(ops.toJS);
+      }
+      return call(
+        block,
+        sources.isEmpty ? 0 : block + sourcesOffset,
+        ops.isEmpty ? 0 : block + opsOffset,
+      );
+    });
+  }
+
+  /// Renders [handle] with [ops]; returns the new handle.
+  int render(int handle, List<int> sources, Uint8List ops) =>
+      _withRenderBlock(sources, ops, (block, sourcesPtr, opsPtr) {
+        const context = 'operation: render';
+        checkError(
+          _call(
+            context,
+            () => _exports.render(
+              handle,
+              sourcesPtr,
+              sources.length,
+              opsPtr,
+              ops.length,
+              block,
+            ),
+          ),
+          context,
+        );
+        final result = _u32(block);
+        if (result == 0) {
+          throw frustbiteError(FrustbiteErrorCode.unknown, context);
+        }
+        return result;
+      });
+
+  /// Renders [handle] with [ops] to WAV bytes in [format] (a wire value).
+  Uint8List renderWav(
+    int handle,
+    List<int> sources,
+    Uint8List ops,
+    int format,
+  ) => _withRenderBlock(sources, ops, (block, sourcesPtr, opsPtr) {
+    const context = 'operation: toWav';
+    checkError(
+      _call(
+        context,
+        () => _exports.renderWav(
+          handle,
+          sourcesPtr,
+          sources.length,
+          opsPtr,
+          ops.length,
+          format,
+          block,
+          block + _word,
+        ),
+      ),
+      context,
+    );
+    final ptr = _u32(block);
+    final len = _u32(block + _word);
+    try {
+      return _copyBytes(ptr, len);
+    } finally {
+      _freeBytes(ptr, len);
+    }
+  });
+
+  /// Silent stretches of [handle].
+  List<SilenceRange> detectSilence(
+    int handle,
+    double thresholdDb,
+    int minDurationMs,
+  ) => _withAlloc(2 * _word, _word, (out) {
+    const context = 'operation: detectSilence';
+    checkError(
+      _call(
+        context,
+        () => _exports.detectSilence(
+          handle,
+          thresholdDb,
+          minDurationMs,
+          out,
+          out + _word,
+        ),
+      ),
+      context,
+    );
+    final ptr = _u32(out);
+    final len = _u32(out + _word);
+    if (ptr == 0) return const [];
+    try {
+      final data = ByteData.view(_memory.toDart, ptr, len * 8);
+      // dart2js has no ByteData.getUint64; combine the two halves.
+      final values = [
+        for (var i = 0; i < len; i++)
+          data.getUint32(i * 8, Endian.little) +
+              data.getUint32(i * 8 + 4, Endian.little) * 0x100000000,
+      ];
+      return silenceRangesFromMicros(values);
+    } finally {
+      _release(() => _exports.freeU64(ptr, len));
+    }
   });
 
   /// The current memory buffer. Never cache it across wasm calls.
