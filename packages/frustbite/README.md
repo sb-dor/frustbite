@@ -3,17 +3,14 @@
 [![CI](https://github.com/sb-dor/frustbite/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/sb-dor/frustbite/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/sb-dor/frustbite/blob/main/LICENSE)
 [![Docs](https://img.shields.io/badge/docs-sb--dor.github.io%2Ffrustbite-informational)](https://sb-dor.github.io/frustbite/)
-<!-- Enable after the first pub.dev release; the badge shows "not found" before that.
 [![pub package](https://img.shields.io/pub/v/frustbite.svg)](https://pub.dev/packages/frustbite)
--->
 
 Read and edit audio from pure Dart: stream info, tags, cover art, waveforms and
 decoded PCM; trim, join, mix, fade, normalize, resample and save as WAV. A Rust
 crate does the work through FFI and Dart build hooks on native platforms and
 through WebAssembly on the web.
 
-Editing is unreleased: it is in the repository and comes in the release after
-0.0.2. Compressed encoders and tag writing are on the [roadmap](#roadmap).
+Compressed encoders and tag writing are on the [roadmap](#roadmap).
 
 Full documentation: <https://sb-dor.github.io/frustbite/>.
 
@@ -28,7 +25,7 @@ shows info, tags and a waveform:
 
 ```yaml
 dependencies:
-  frustbite: ^0.0.2
+  frustbite: ^0.0.3
 ```
 
 The package carries the prebuilt native library for every native target (12
@@ -202,7 +199,7 @@ of each operation.
 ## Web
 
 Download `frustbite.wasm` from the GitHub Release `frustbite-v<version>`
-matching the package version (for example `frustbite-v0.0.2`) and put it in the
+matching the package version (for example `frustbite-v0.0.3`) and put it in the
 web root, then initialize before first use:
 
 ```dart
@@ -290,7 +287,7 @@ for the full table, including the rows where Frustbite is slower.
 
 1. **Reading (0.0.2).** `fromFile`/`fromMemory`, `info`, `tags`,
    `cover`, `waveform`, `decode` and their async variants; web support.
-2. **Editing (unreleased).** `trim`, `concat` with crossfades, `gain`,
+2. **Editing (0.0.3).** `trim`, `concat` with crossfades, `gain`,
    `normalize`, `fadeIn`/`fadeOut`, `resample`, `toMono`/`toStereo`,
    `trimSilence`, `detectSilence` and `mix`, as a lazy pipeline run in one
    native call; WAV writing.

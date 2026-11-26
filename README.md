@@ -16,7 +16,7 @@ and WebAssembly.**
 - Tags and embedded cover art
 - Editing in one native call: trim, join with crossfades, mix, fade, normalize,
   resample, mono/stereo, silence trimming and detection; save as 16/24-bit or
-  float WAV (unreleased, next version)
+  float WAV
 - Async: `waveformAsync`, `decodeAsync`, `renderAsync` and friends run on a
   background isolate
 - Android, iOS, macOS, Linux, Windows and the web (dart2js and dart2wasm)

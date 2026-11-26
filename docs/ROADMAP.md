@@ -1,13 +1,13 @@
 # Roadmap
 
 Stage 1 (reading), distribution v2 (version 0.0.2: bundled prebuilt
-libraries, offline hermetic builds) and stage 2 (editing, unreleased) are done. The rulings behind them are in
+libraries, offline hermetic builds) and stage 2 (editing, version 0.0.3) are done. The rulings behind them are in
 [DECISIONS.md](DECISIONS.md). Each stage ends in a working state, with tests
 green on every CI target.
 
 ## Stages
 
-### Stage 2: Editing (done, unreleased)
+### Stage 2: Editing (done, 0.0.3)
 
 `trim`, `concat` with crossfades, `gain`, `normalize`, `fadeIn`/`fadeOut`,
 `resample`, `toMono`/`toStereo`, `trimSilence`, `detectSilence` and `mix`, as a
