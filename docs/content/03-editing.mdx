@@ -3,20 +3,6 @@ title: Editing
 description: Trim, join, mix, fade, normalize, resample and save as WAV.
 ---
 
-:::note
-Editing is new and comes in the release after 0.0.2. Until that release is
-on pub.dev, depend on the repository with a Rust toolchain installed (the
-package builds from source when it has no bundled libraries):
-
-```yaml
-dependencies:
-  frustbite:
-    git:
-      url: https://github.com/sb-dor/frustbite
-      path: packages/frustbite
-```
-:::
-
 Frustbite edits audio as a lazy chain of operations. `audio.edit()` starts the
 chain, each call adds one step, and a terminal call runs the whole chain in one
 native call. The source is never changed.

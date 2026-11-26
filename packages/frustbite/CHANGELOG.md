@@ -1,6 +1,6 @@
-## Unreleased
+## 0.0.3
 
-Editing (stage 2).
+Editing (stage 2). The first release on pub.dev.
 
 - `audio.edit()` returns an `AudioEdit`: a lazy, immutable chain of `trim`,
   `gain`, `normalize` (peak, default -1 dBFS), `fadeIn`, `fadeOut`,

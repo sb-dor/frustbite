@@ -1,6 +1,6 @@
 name: frustbite
 description: Pure-Dart audio library backed by a Rust crate via FFI and Dart build hooks.
-version: 0.0.2
+version: 0.0.3
 repository: https://github.com/sb-dor/frustbite
 resolution: workspace
 
