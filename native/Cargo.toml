@@ -20,6 +20,9 @@ opus-pure = { version = "=0.2.5", optional = true, default-features = false }
 lofty = "0.25.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Sample rate conversion for editing (`resample`, and `append`/`mix` of mismatched sources):
+# the synchronous FFT resampler, pure Rust.
+rubato = { version = "5.1.0", default-features = false, features = ["fft_resampler"] }
 
 # Keep in sync with `supportedFormats` in packages/frustbite/lib/src/hook/local_build.dart.
 [features]

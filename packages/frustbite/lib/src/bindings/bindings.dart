@@ -41,6 +41,31 @@ external int frustbite_decode(
   ffi.Pointer<ffi.Uint32> out_channels,
 );
 
+/// Finds silent stretches: runs of at least `min_duration_ms` in which every channel stays
+/// below `threshold_db` dBFS (finite and `<= 0`, else `InvalidParameter`). On success `*out`
+/// receives `*out_len` values, a start and an end in microseconds per run (`[start, end)`, so
+/// `*out_len` is even), to release with `frustbite_free_u64`; no runs gives null and 0. Decodes
+/// the whole source without keeping it: call it off the UI thread.
+///
+/// # Safety
+/// `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<FrustbiteAudio>,
+    ffi.Float,
+    ffi.Uint32,
+    ffi.Pointer<ffi.Pointer<ffi.Uint64>>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external int frustbite_detect_silence(
+  ffi.Pointer<FrustbiteAudio> audio,
+  double threshold_db,
+  int min_duration_ms,
+  ffi.Pointer<ffi.Pointer<ffi.Uint64>> out,
+  ffi.Pointer<ffi.Size> out_len,
+);
+
 /// Releases a handle. Passing null is a no-op.
 ///
 /// # Safety
@@ -65,6 +90,15 @@ external void frustbite_free_bytes(ffi.Pointer<ffi.Uint8> ptr, int len);
 /// the same `len`, not yet freed.
 @ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Float>, ffi.Size)>(isLeaf: true)
 external void frustbite_free_f32(ffi.Pointer<ffi.Float> ptr, int len);
+
+/// Releases a buffer from `frustbite_detect_silence`. `len` must be the `*out_len` it returned.
+/// Passing null is a no-op.
+///
+/// # Safety
+/// `ptr` must be null or a buffer returned by `frustbite_detect_silence` with the same `len`,
+/// not yet freed.
+@ffi.Native<ffi.Void Function(ffi.Pointer<ffi.Uint64>, ffi.Size)>(isLeaf: true)
+external void frustbite_free_u64(ffi.Pointer<ffi.Uint64> ptr, int len);
 
 /// Reads the embedded cover art (the front cover, else the first picture). On success `*out`
 /// receives `*out_len` image bytes and `*out_mime` receives `*out_mime_len` bytes of the MIME
@@ -166,6 +200,71 @@ external int frustbite_open_memory(
   ffi.Pointer<ffi.Pointer<FrustbiteAudio>> out,
 );
 
+/// Decodes `audio`, applies the editing operations in `ops` and returns the result as a new
+/// handle (in-memory 32-bit float WAV) to release with `frustbite_free`. `audio` itself is not
+/// changed.
+///
+/// `ops` is `ops_len` bytes of UTF-8 JSON: an array of objects with an `"op"` field, one of
+/// `trim {start_us, end_us|null}`, `gain {db}`, `normalize {peak_db <= 0}`,
+/// `fade_in {duration_us}`, `fade_out {duration_us}`, `resample {sample_rate 1..=768000}`,
+/// `to_mono`, `to_stereo`, `trim_silence {threshold_db <= 0}`, `append {source, crossfade_us}`,
+/// `mix {source, gain_db, offset_us}`, run in order. `source` indexes `sources`, the
+/// `sources_len` extra handles. Malformed JSON, unknown operations or fields and out-of-range
+/// values give `InvalidParameter`. Everything is decoded in memory: call it off the UI thread.
+///
+/// # Safety
+/// `audio` and every entry of `sources` must be live handles; `sources` must point to
+/// `sources_len` handles and `ops` to `ops_len` bytes (either may be null when its length is
+/// 0); `out` must be valid for a pointer write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<FrustbiteAudio>,
+    ffi.Pointer<ffi.Pointer<FrustbiteAudio>>,
+    ffi.Size,
+    ffi.Pointer<ffi.Uint8>,
+    ffi.Size,
+    ffi.Pointer<ffi.Pointer<FrustbiteAudio>>,
+  )
+>()
+external int frustbite_render(
+  ffi.Pointer<FrustbiteAudio> audio,
+  ffi.Pointer<ffi.Pointer<FrustbiteAudio>> sources,
+  int sources_len,
+  ffi.Pointer<ffi.Uint8> ops,
+  int ops_len,
+  ffi.Pointer<ffi.Pointer<FrustbiteAudio>> out,
+);
+
+/// Like `frustbite_render`, but returns the result as WAV file bytes in `format` (a
+/// `FrustbiteWavFormat` value) instead of a handle. With no operations it converts any source to
+/// WAV. On success `*out` receives `*out_len` bytes to release with `frustbite_free_bytes`. Integer
+/// formats clamp to full scale. More than 4 GiB of sample data gives `InvalidParameter`.
+///
+/// # Safety
+/// As for `frustbite_render`; `out` and `out_len` must be valid for a write.
+@ffi.Native<
+  ffi.Uint32 Function(
+    ffi.Pointer<FrustbiteAudio>,
+    ffi.Pointer<ffi.Pointer<FrustbiteAudio>>,
+    ffi.Size,
+    ffi.Pointer<ffi.Uint8>,
+    ffi.Size,
+    ffi.Uint32,
+    ffi.Pointer<ffi.Pointer<ffi.Uint8>>,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external int frustbite_render_wav(
+  ffi.Pointer<FrustbiteAudio> audio,
+  ffi.Pointer<ffi.Pointer<FrustbiteAudio>> sources,
+  int sources_len,
+  ffi.Pointer<ffi.Uint8> ops,
+  int ops_len,
+  int format,
+  ffi.Pointer<ffi.Pointer<ffi.Uint8>> out,
+  ffi.Pointer<ffi.Size> out_len,
+);
+
 /// Bytes the handle keeps in memory, for memory accounting: the copied data for
 /// `frustbite_open_memory`, 0 for `frustbite_open_file` (a file handle holds no bytes) and for
 /// null. Does no I/O.
@@ -203,7 +302,7 @@ external int frustbite_waveform(
   ffi.Pointer<ffi.Size> out_len,
 );
 
-const int FRUSTBITE_ABI_VERSION = 1;
+const int FRUSTBITE_ABI_VERSION = 2;
 
 const int FRUSTBITE_FORMAT_DETECT = 4294967295;
 
@@ -271,3 +370,5 @@ final class FrustbiteAudioInfo extends ffi.Struct {
     ..ref.total_frames = total_frames
     ..ref.duration_us = duration_us;
 }
+
+const int MAX_SAMPLE_RATE = 768000;

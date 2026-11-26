@@ -1,0 +1,193 @@
+---
+title: Editing
+description: Trim, join, mix, fade, normalize, resample and save as WAV.
+---
+
+:::note
+Editing is new and comes in the release after 0.0.2. Until that release is
+on pub.dev, depend on the repository with a Rust toolchain installed (the
+package builds from source when it has no bundled libraries):
+
+```yaml
+dependencies:
+  frustbite:
+    git:
+      url: https://github.com/sb-dor/frustbite
+      path: packages/frustbite
+```
+:::
+
+Frustbite edits audio as a lazy chain of operations. `audio.edit()` starts the
+chain, each call adds one step, and a terminal call runs the whole chain in one
+native call. The source is never changed.
+
+```dart
+final voice = Frustbite.fromFile('voice.m4a');
+final clean = voice
+    .edit()
+    .trimSilence()
+    .fadeIn(const Duration(milliseconds: 200))
+    .fadeOut(const Duration(milliseconds: 500))
+    .normalize()
+    .render();
+try {
+  clean.saveWav('voice.wav');
+} finally {
+  clean.dispose();
+  voice.dispose();
+}
+```
+
+## Terminal calls
+
+| Call | Returns |
+| --- | --- |
+| `render()` | A new `Frustbite` that holds the result. Dispose it when done. |
+| `toWav(format: ...)` | The result as WAV file bytes (`Uint8List`). |
+| `saveWav(path, format: ...)` | Writes the result to a WAV file. Native only. |
+
+Each one has an async form (`renderAsync`, `toWavAsync`, `saveWavAsync`) that
+runs on a background isolate. None of the sources in the chain can be disposed
+while an async call runs.
+
+The `Frustbite` that `render()` returns supports the whole API: `info`,
+`waveform`, `decode`, another `edit()`, `toWav`. It keeps the result in memory
+as 32-bit float WAV, so chaining renders loses no precision.
+
+## Operations
+
+The operations run in order. Each one works on the result of the previous
+ones, so positions and durations refer to the audio as it is at that step.
+
+| Operation | What it does |
+| --- | --- |
+| `trim(start:, end:)` | Keeps `start` to `end` (to the end when `end` is null). Positions past the end are clamped, so the result can be empty. |
+| `gain(db)` | Changes the volume by `db` decibels. `-6` is about half the amplitude. |
+| `normalize(peakDb: -1)` | Scales the audio so its loudest sample reaches `peakDb` dBFS. `peakDb` must be at most 0. Silence stays unchanged. |
+| `fadeIn(duration)`, `fadeOut(duration)` | Linear fades from silence and to silence. |
+| `resample(sampleRate)` | Converts to `sampleRate` Hz (1 to 768000) with a high-quality FFT resampler. |
+| `toMono()` | Averages every channel into one. |
+| `toStereo()` | Duplicates mono and keeps stereo as it is. From more than two channels it keeps the first two. |
+| `trimSilence(thresholdDb: -50)` | Removes the silence at the start and the end. |
+| `append(other, crossfade:)` | Plays `other` after the current audio. A crossfade overlaps the two with an equal-power fade. |
+| `mix(other, gainDb:, offset:)` | Lays `other` over the current audio from `offset`, with `gainDb` applied. |
+
+`Frustbite.concat([a, b, c], crossfade: ...)` starts a chain that joins
+several sources one after another.
+
+Invalid arguments, such as a negative duration or a positive `peakDb`, throw
+`InvalidParameterException` from the call that receives them.
+
+### Different formats
+
+`append` and `mix` convert `other` to the sample rate and channel count the
+chain has at that step. To mono, channels are averaged. From mono, the channel
+is duplicated. Otherwise output channel `i` takes input channel `i % n`. You
+can join a 48 kHz stereo file and a 16 kHz mono recording without converting
+them yourself.
+
+### Levels
+
+`mix` and a positive `gain` can push samples past full scale. Integer WAV
+formats then clip. 32-bit float stores the values as they are. Add
+`normalize()` after a mix when that matters:
+
+```dart
+final podcast = voice
+    .edit()
+    .mix(music, gainDb: -18)
+    .normalize()
+    .toWav();
+```
+
+## Recipes
+
+### A ringtone from a song
+
+```dart
+song
+    .edit()
+    .trim(start: const Duration(seconds: 45), end: const Duration(seconds: 75))
+    .fadeIn(const Duration(seconds: 1))
+    .fadeOut(const Duration(seconds: 2))
+    .saveWav('ringtone.wav');
+```
+
+### Speech recognition input (16 kHz mono)
+
+```dart
+final bytes = recording.edit().toMono().resample(16000).toWav();
+```
+
+### A playlist with crossfades
+
+```dart
+final mix = Frustbite.concat(
+  tracks,
+  crossfade: const Duration(seconds: 3),
+).normalize().render();
+```
+
+### Split a recording at pauses
+
+`detectSilence` finds stretches in which every channel stays below a
+threshold for at least `minDuration`. It decodes the source without keeping
+it in memory.
+
+```dart
+final pauses = recording.detectSilence(
+  thresholdDb: -45,
+  minDuration: const Duration(milliseconds: 700),
+);
+var start = Duration.zero;
+for (final (i, pause) in pauses.indexed) {
+  recording
+      .edit()
+      .trim(start: start, end: pause.start)
+      .saveWav('phrase_$i.wav');
+  start = pause.end;
+}
+```
+
+Each `SilenceRange` has `start`, `end` (exclusive) and `duration`.
+
+## WAV formats
+
+`WavFormat` picks the sample format of `toWav` and `saveWav`:
+
+| Format | Notes |
+| --- | --- |
+| `WavFormat.pcm16` (default) | The most compatible format. A 16-bit WAV read and written back is unchanged. |
+| `WavFormat.pcm24` | Higher resolution integer PCM. |
+| `WavFormat.float32` | Keeps values above full scale. Lossless for the edited signal. |
+
+`audio.toWav()` and `audio.saveWav(path)` without `edit()` convert any
+supported format to WAV. RIFF limits a WAV file to 4 GiB of samples. A larger
+result throws `InvalidParameterException`.
+
+## Memory and the web
+
+Editing decodes the source and every appended or mixed source fully into
+memory. An hour of 44.1 kHz stereo takes about 1.3 GB of floats. Streaming
+for large files is planned for a later stage. `detectSilence` already streams.
+
+On the web, editing works the same way through `frustbite.wasm`, with three
+differences:
+
+- `saveWav` throws `UnsupportedError`. Use `toWav` and hand the bytes to the
+  browser, as a download or an upload.
+- The async forms run on the main thread in a later event-loop turn.
+- All sources in one chain must be opened after the same
+  `Frustbite.initialize()`.
+
+## Performance
+
+From the repository's `packages/benchmark` (Apple M3 Pro, 180 s of 44.1 kHz
+stereo). Each case decodes the WAV, runs the edit and encodes WAV bytes:
+
+| Operation | Frustbite | Baseline |
+| --- | --- | --- |
+| resample to 48 kHz, float32 WAV out | 175.7 ms | none |
+| mono + resample to 16 kHz, 16-bit WAV out | 90.3 ms | none |
+| trim, fades and normalize, 16-bit WAV out | 36.6 ms | none |
+| WAV to 16-bit WAV (`toWav()`) | 34.5 ms | `wav` (pure Dart) `Wav.read` + `write`: 449.7 ms (13x slower) |

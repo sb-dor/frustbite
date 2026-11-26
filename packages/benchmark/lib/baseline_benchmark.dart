@@ -85,6 +85,10 @@ Map<String, Map<String, BenchmarkBase>> baselineCases(Inputs inputs) {
         return peakBuckets(pcm.samples, pcm.channels, 1000);
       }),
     },
+    'encode_wav': {
+      // Read the s16 WAV and write it back as s16 bytes, as frustbite does.
+      'wav': bench('wav', 'encode_wav', () => wav.Wav.read(inputs.wav).write()),
+    },
     'tags_mp3': {
       // Only accepts a File: reads from disk (OS page cache is warm).
       'audio_metadata_reader': bench(

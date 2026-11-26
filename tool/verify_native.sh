@@ -9,7 +9,7 @@
 #
 # Fails on:
 #   - an exported symbol that is not `frustbite_*` (a short allow-list of
-#     linker-defined ELF symbols aside), or an export count other than 12;
+#     linker-defined ELF symbols aside), or an export count other than 16;
 #   - Android: a LOAD segment not aligned to 16 KB (Google Play);
 #   - Linux: a glibc symbol newer than 2.17, or a NEEDED library outside
 #     libc/libm/libdl/libpthread/librt/ld-linux (no libgcc_s: build.rs links it
@@ -32,7 +32,7 @@ target="${2:?usage: tool/verify_native.sh <file> <target>}"
 # The exported C functions: every `frustbite_*` function in native/src/ffi.rs
 # (wasm_alloc.rs adds two more, but only on wasm32). Change it together with the
 # FFI surface.
-EXPECTED_EXPORTS=12
+EXPECTED_EXPORTS=16
 # Mirror macOSTargetVersion and iOSTargetVersion in
 # packages/frustbite/lib/src/hook/target_versions.dart.
 MACOS_MINOS=13.0

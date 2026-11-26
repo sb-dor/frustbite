@@ -10,7 +10,7 @@ use crate::error::FrustbiteErrorCode as Code;
 use crate::probe::{FrustbiteAudio, MAX_CONSECUTIVE_DECODE_ERRORS, map_error, open_reader};
 
 /// A fully decoded source.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Decoded {
     /// Interleaved samples in [-1, 1]; empty when the source holds no audio frames.
     pub samples: Vec<f32>,

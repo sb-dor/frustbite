@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'audio_enums.dart';
@@ -7,7 +8,10 @@ import 'audio_tags.dart';
 import 'backend.dart';
 import 'enums.dart';
 import 'frustbite_exception.dart';
+import 'silence_range.dart';
 import 'waveform.dart';
+
+part 'audio_edit.dart';
 
 /// An opened audio source, backed by Rust on native and web platforms.
 ///
@@ -166,6 +170,99 @@ final class Frustbite {
     _busy++;
     try {
       return await _backend.decodeAsync();
+    } finally {
+      _busy--;
+    }
+  }
+
+  /// Starts a lazy edit of this audio; see [AudioEdit]. This instance is not
+  /// changed: the edit's terminal call returns a new result.
+  AudioEdit edit() {
+    _checkDisposed();
+    return AudioEdit._(this, const [], const []);
+  }
+
+  /// An edit that plays [parts] one after another, each converted to the
+  /// sample rate and channel count of the first. With a [crossfade],
+  /// neighbours overlap by that much. Throws [ArgumentError] if [parts] is
+  /// empty.
+  static AudioEdit concat(
+    List<Frustbite> parts, {
+    Duration crossfade = Duration.zero,
+  }) {
+    if (parts.isEmpty) throw ArgumentError.value(parts, 'parts', 'is empty');
+    var edit = parts.first.edit();
+    for (final part in parts.skip(1)) {
+      edit = edit.append(part, crossfade: crossfade);
+    }
+    return edit;
+  }
+
+  /// Encodes the whole audio as a WAV file in [format]: a converter from any
+  /// supported format to WAV. Heavy for long files.
+  Uint8List toWav({WavFormat format = WavFormat.pcm16}) =>
+      edit().toWav(format: format);
+
+  /// Like [toWav], on a background isolate (on web: in a later event-loop
+  /// turn).
+  Future<Uint8List> toWavAsync({WavFormat format = WavFormat.pcm16}) =>
+      edit().toWavAsync(format: format);
+
+  /// Writes the whole audio to [path] as WAV. Throws [FrustbiteIoException]
+  /// when the file cannot be written. On web it throws [UnsupportedError];
+  /// use [toWav].
+  void saveWav(String path, {WavFormat format = WavFormat.pcm16}) =>
+      edit().saveWav(path, format: format);
+
+  /// Like [saveWav], encoding on a background isolate.
+  Future<void> saveWavAsync(
+    String path, {
+    WavFormat format = WavFormat.pcm16,
+  }) => edit().saveWavAsync(path, format: format);
+
+  static int _silenceMs(double thresholdDb, Duration minDuration) {
+    if (!thresholdDb.isFinite || thresholdDb > 0) {
+      throw frustbiteError(
+        FrustbiteErrorCode.invalidParameter,
+        'thresholdDb must be finite and <= 0',
+      );
+    }
+    final ms = minDuration.inMilliseconds;
+    if (minDuration.isNegative || ms > 0xFFFFFFFF) {
+      throw frustbiteError(
+        FrustbiteErrorCode.invalidParameter,
+        'minDuration must be in 0..4294967295 ms',
+      );
+    }
+    return ms;
+  }
+
+  /// Finds the silent stretches: runs of at least [minDuration] in which
+  /// every channel stays below [thresholdDb] dBFS (`<= 0`). Use it to split
+  /// a recording at pauses. Decodes the whole source without keeping it in
+  /// memory.
+  List<SilenceRange> detectSilence({
+    double thresholdDb = -50,
+    Duration minDuration = const Duration(milliseconds: 500),
+  }) {
+    _checkDisposed();
+    return _backend.detectSilence(
+      thresholdDb,
+      _silenceMs(thresholdDb, minDuration),
+    );
+  }
+
+  /// Like [detectSilence], on a background isolate (on web: in a later
+  /// event-loop turn).
+  Future<List<SilenceRange>> detectSilenceAsync({
+    double thresholdDb = -50,
+    Duration minDuration = const Duration(milliseconds: 500),
+  }) async {
+    _checkDisposed();
+    final ms = _silenceMs(thresholdDb, minDuration);
+    _busy++;
+    try {
+      return await _backend.detectSilenceAsync(thresholdDb, ms);
     } finally {
       _busy--;
     }

@@ -9,6 +9,7 @@ const _sharedEnums = {
   'FrustbiteContainer',
   'FrustbiteCodec',
   'FrustbiteWaveformMode',
+  'FrustbiteWavFormat',
 };
 
 /// Functions that never call back into Dart and can run as leaf calls. Cheap calls only: no
@@ -18,6 +19,7 @@ const _leafSymbols = {
   'frustbite_source_byte_length',
   'frustbite_free_f32',
   'frustbite_free_bytes',
+  'frustbite_free_u64',
 };
 
 Future<void> main() async {

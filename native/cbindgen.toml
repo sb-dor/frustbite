@@ -7,7 +7,7 @@ usize_is_size_t = true
 [export]
 exclude = ["frustbite_alloc", "frustbite_dealloc"]
 # Needed by the Dart side but not reachable from any function signature.
-include = ["FrustbiteErrorCode", "FrustbiteContainer", "FrustbiteCodec", "FrustbiteAudioInfo", "FrustbiteWaveformMode"]
+include = ["FrustbiteErrorCode", "FrustbiteContainer", "FrustbiteCodec", "FrustbiteAudioInfo", "FrustbiteWaveformMode", "FrustbiteWavFormat"]
 
 [parse]
 parse_deps = false

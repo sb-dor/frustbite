@@ -48,7 +48,10 @@ download `frustbite.wasm` from the release.
 
 - Use `fromMemory`. `fromFile` always throws `UnsupportedError` on the web
   because browsers do not expose file paths.
-- The `*Async` methods (`waveformAsync`, `decodeAsync`) only defer the work to a
+- `saveWav` throws `UnsupportedError`; use `toWav` and give the bytes to the
+  browser. All sources of one edit must come from the same
+  `Frustbite.initialize()` (see [Editing](/editing)).
+- The `*Async` methods (`waveformAsync`, `decodeAsync`, `renderAsync`, ...) only defer the work to a
   later event-loop turn. wasm memory cannot be shared with a worker isolate, so
   the work still runs on the main thread and blocks it for long files. Decode
   long files sparingly, or prefer `waveform`, which streams.

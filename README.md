@@ -7,13 +7,18 @@
 [![pub package](https://img.shields.io/pub/v/frustbite.svg)](https://pub.dev/packages/frustbite)
 -->
 
-**Read audio from pure Dart: info, tags, cover art, waveforms and PCM, powered
-by a Rust core through FFI and WebAssembly.**
+**Read and edit audio from pure Dart: info, tags, cover art, waveforms, PCM,
+and a lazy editing pipeline with WAV output, powered by a Rust core through FFI
+and WebAssembly.**
 
 - Decodes MP3, AAC-LC (M4A, ADTS), ALAC, FLAC, Vorbis, Opus and WAV
 - Waveforms (peak or RMS) with bounded memory, even for hour-long files
 - Tags and embedded cover art
-- Async: `waveformAsync` and `decodeAsync` run on a background isolate
+- Editing in one native call: trim, join with crossfades, mix, fade, normalize,
+  resample, mono/stereo, silence trimming and detection; save as 16/24-bit or
+  float WAV (unreleased, next version)
+- Async: `waveformAsync`, `decodeAsync`, `renderAsync` and friends run on a
+  background isolate
 - Android, iOS, macOS, Linux, Windows and the web (dart2js and dart2wasm)
 - Pure Rust core with no FFmpeg and no C codecs
 
@@ -40,9 +45,11 @@ shows its info, tags, cover and waveform (iPhone):
 
 Headline numbers (180 s stereo input, Apple M3 Pro, median of 10 runs):
 
-- Decode WAV: 24.9 ms against 225.6 ms for the pure-Dart `wav` package (9.05x)
-- Decode MP3: 95.4 ms against 7955.9 ms for the pure-Dart `glint_audio_pure` (83.39x)
-- Decode MP3: 0.87x against `audio_decode` (83.2 ms), which is also native code
+- Decode WAV: 25.7 ms against 234.9 ms for the pure-Dart `wav` package (9.13x)
+- Decode MP3: 98.0 ms against 7964.9 ms for the pure-Dart `glint_audio_pure` (81.29x)
+- Decode MP3: 0.91x against `audio_decode` (88.8 ms), which is also native code
+- Read and write a WAV: 34.5 ms against 449.7 ms for `wav` (13.04x); resample
+  180 s of stereo to 48 kHz: 175.7 ms
 
 Against native C decoders frustbite is roughly on par, and slower on MP3
 decode. Methodology and every row are in the

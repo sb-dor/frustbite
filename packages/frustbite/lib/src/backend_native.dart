@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 import 'dart:ffi' as ffi;
 import 'dart:typed_data';
@@ -11,7 +12,9 @@ import 'audio_info.dart';
 import 'audio_pcm.dart';
 import 'audio_tags.dart';
 import 'bindings/bindings.dart';
+import 'enums.dart';
 import 'frustbite_exception.dart';
+import 'silence_range.dart';
 import 'waveform.dart';
 
 /// Owns a native handle. The public API guards access after disposal.
@@ -141,8 +144,91 @@ final class BackendAudio implements ffi.Finalizable {
     }
   }
 
+  BackendAudio render(List<BackendAudio> sources, Uint8List ops) =>
+      BackendAudio._(_ptr(nativeRender(address, _addresses(sources), ops)));
+
+  Future<BackendAudio> renderAsync(
+    List<BackendAudio> sources,
+    Uint8List ops,
+  ) async {
+    final addr = address;
+    final addrs = _addresses(sources);
+    try {
+      final result = await Isolate.run(() => nativeRender(addr, addrs, ops));
+      return BackendAudio._(_ptr(result));
+    } finally {
+      _keepAlive();
+      _keepAliveAll(sources);
+    }
+  }
+
+  Uint8List renderWav(
+    List<BackendAudio> sources,
+    Uint8List ops,
+    WavFormat format,
+  ) => nativeRenderWav(address, _addresses(sources), ops, format);
+
+  Future<Uint8List> renderWavAsync(
+    List<BackendAudio> sources,
+    Uint8List ops,
+    WavFormat format,
+  ) async {
+    final addr = address;
+    final addrs = _addresses(sources);
+    try {
+      return await Isolate.run(() => nativeRenderWav(addr, addrs, ops, format));
+    } finally {
+      _keepAlive();
+      _keepAliveAll(sources);
+    }
+  }
+
+  List<SilenceRange> detectSilence(double thresholdDb, int minDurationMs) =>
+      nativeDetectSilence(address, thresholdDb, minDurationMs);
+
+  Future<List<SilenceRange>> detectSilenceAsync(
+    double thresholdDb,
+    int minDurationMs,
+  ) async {
+    final addr = address;
+    try {
+      return await Isolate.run(
+        () => nativeDetectSilence(addr, thresholdDb, minDurationMs),
+      );
+    } finally {
+      _keepAlive();
+    }
+  }
+
+  /// Files can be written on native platforms.
+  static void ensureSaveSupported() {}
+
+  /// Writes [bytes] to [path], replacing the file.
+  static void writeFile(String path, Uint8List bytes) {
+    try {
+      File(path).writeAsBytesSync(bytes, flush: true);
+    } on FileSystemException catch (error) {
+      throw frustbiteError(FrustbiteErrorCode.ioError, 'path: $path: $error');
+    }
+  }
+
+  static Future<void> writeFileAsync(String path, Uint8List bytes) async {
+    try {
+      await File(path).writeAsBytes(bytes, flush: true);
+    } on FileSystemException catch (error) {
+      throw frustbiteError(FrustbiteErrorCode.ioError, 'path: $path: $error');
+    }
+  }
+
+  static List<int> _addresses(List<BackendAudio> sources) => [
+    for (final source in sources) source.address,
+  ];
+
   @pragma('vm:never-inline')
   void _keepAlive() {}
+
+  @pragma('vm:never-inline')
+  static void _keepAliveAll(List<BackendAudio> sources) {}
 
   void dispose() {
     _finalizer.detach(this);
@@ -254,6 +340,105 @@ AudioPcm nativeDecode(int address) => ffi.using((arena) {
     sampleRate: rate.value,
     channels: channels.value,
   );
+});
+
+/// Runs [body] with the extra source handles and the ops JSON in native
+/// memory.
+T _withRenderInputs<T>(
+  List<int> sources,
+  Uint8List ops,
+  T Function(
+    ffi.Arena arena,
+    ffi.Pointer<ffi.Pointer<FrustbiteAudio>> sources,
+    ffi.Pointer<ffi.Uint8> ops,
+  )
+  body,
+) => ffi.using((arena) {
+  final handles = sources.isEmpty
+      ? ffi.nullptr.cast<ffi.Pointer<FrustbiteAudio>>()
+      : arena<ffi.Pointer<FrustbiteAudio>>(sources.length);
+  for (var i = 0; i < sources.length; i++) {
+    handles[i] = _ptr(sources[i]);
+  }
+  final json = ops.isEmpty
+      ? ffi.nullptr.cast<ffi.Uint8>()
+      : (arena<ffi.Uint8>(ops.length)..asTypedList(ops.length).setAll(0, ops));
+  return body(arena, handles, json);
+});
+
+/// Renders the handle at [address] with [ops]; returns the new handle's
+/// address.
+int nativeRender(int address, List<int> sources, Uint8List ops) =>
+    _withRenderInputs(sources, ops, (arena, handles, json) {
+      final out = arena<ffi.Pointer<FrustbiteAudio>>();
+      checkError(
+        frustbite_render(
+          _ptr(address),
+          handles,
+          sources.length,
+          json,
+          ops.length,
+          out,
+        ),
+        'operation: render',
+      );
+      return out.value.address;
+    });
+
+/// Renders the handle at [address] with [ops] to WAV bytes.
+Uint8List nativeRenderWav(
+  int address,
+  List<int> sources,
+  Uint8List ops,
+  WavFormat format,
+) => _withRenderInputs(sources, ops, (arena, handles, json) {
+  final out = arena<ffi.Pointer<ffi.Uint8>>();
+  final outLen = arena<ffi.Size>();
+  checkError(
+    frustbite_render_wav(
+      _ptr(address),
+      handles,
+      sources.length,
+      json,
+      ops.length,
+      format.wireValue,
+      out,
+      outLen,
+    ),
+    'operation: toWav',
+  );
+  try {
+    return _copyBytes(out.value, outLen.value);
+  } finally {
+    _freeBytes(out.value, outLen.value);
+  }
+});
+
+/// Finds silent stretches in the handle at [address].
+List<SilenceRange> nativeDetectSilence(
+  int address,
+  double thresholdDb,
+  int minDurationMs,
+) => ffi.using((arena) {
+  final out = arena<ffi.Pointer<ffi.Uint64>>();
+  final outLen = arena<ffi.Size>();
+  checkError(
+    frustbite_detect_silence(
+      _ptr(address),
+      thresholdDb,
+      minDurationMs,
+      out,
+      outLen,
+    ),
+    'operation: detectSilence',
+  );
+  final ptr = out.value;
+  if (ptr == ffi.nullptr) return const [];
+  try {
+    return silenceRangesFromMicros(ptr.asTypedList(outLen.value));
+  } finally {
+    frustbite_free_u64(ptr, outLen.value);
+  }
 });
 
 /// Copies a native byte buffer into Dart memory. Does not free it.

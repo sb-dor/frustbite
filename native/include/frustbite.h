@@ -8,9 +8,14 @@
 #include <stdlib.h>
 
 /**
+ * Highest sample rate `resample` accepts.
+ */
+#define MAX_SAMPLE_RATE 768000
+
+/**
  * ABI contract version. Increment for incompatible signatures, layouts, or IDs.
  */
-#define FRUSTBITE_ABI_VERSION 1
+#define FRUSTBITE_ABI_VERSION 2
 
 /**
  * Pass as `format` to detect the container from the content.
@@ -185,6 +190,36 @@ enum FrustbiteWaveformMode
 typedef enum FrustbiteWaveformMode FrustbiteWaveformMode;
 #else
 typedef uint32_t FrustbiteWaveformMode;
+#endif // __STDC_VERSION__ >= 202311L
+#endif // __cplusplus
+
+/**
+ * Sample format of a written WAV. Values are part of the ABI.
+ *
+ */
+enum FrustbiteWavFormat
+#if defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+  : uint32_t
+#endif // defined(__cplusplus) || __STDC_VERSION__ >= 202311L
+ {
+  /**
+   * 16-bit signed integer PCM.
+   */
+  FrustbiteWavFormat_Pcm16 = 0,
+  /**
+   * 24-bit signed integer PCM.
+   */
+  FrustbiteWavFormat_Pcm24 = 1,
+  /**
+   * 32-bit IEEE float, values outside [-1, 1] kept as they are.
+   */
+  FrustbiteWavFormat_Float32 = 2,
+};
+#ifndef __cplusplus
+#if __STDC_VERSION__ >= 202311L
+typedef enum FrustbiteWavFormat FrustbiteWavFormat;
+#else
+typedef uint32_t FrustbiteWavFormat;
 #endif // __STDC_VERSION__ >= 202311L
 #endif // __cplusplus
 
@@ -382,6 +417,75 @@ FrustbiteErrorCode frustbite_get_cover(const struct FrustbiteAudio *audio,
  * yet freed.
  */
 void frustbite_free_bytes(uint8_t *ptr, size_t len);
+
+/**
+ * Decodes `audio`, applies the editing operations in `ops` and returns the result as a new
+ * handle (in-memory 32-bit float WAV) to release with `frustbite_free`. `audio` itself is not
+ * changed.
+ *
+ * `ops` is `ops_len` bytes of UTF-8 JSON: an array of objects with an `"op"` field, one of
+ * `trim {start_us, end_us|null}`, `gain {db}`, `normalize {peak_db <= 0}`,
+ * `fade_in {duration_us}`, `fade_out {duration_us}`, `resample {sample_rate 1..=768000}`,
+ * `to_mono`, `to_stereo`, `trim_silence {threshold_db <= 0}`, `append {source, crossfade_us}`,
+ * `mix {source, gain_db, offset_us}`, run in order. `source` indexes `sources`, the
+ * `sources_len` extra handles. Malformed JSON, unknown operations or fields and out-of-range
+ * values give `InvalidParameter`. Everything is decoded in memory: call it off the UI thread.
+ *
+ * # Safety
+ * `audio` and every entry of `sources` must be live handles; `sources` must point to
+ * `sources_len` handles and `ops` to `ops_len` bytes (either may be null when its length is
+ * 0); `out` must be valid for a pointer write.
+ */
+FrustbiteErrorCode frustbite_render(const struct FrustbiteAudio *audio,
+                                    const struct FrustbiteAudio *const *sources,
+                                    size_t sources_len,
+                                    const uint8_t *ops,
+                                    size_t ops_len,
+                                    struct FrustbiteAudio **out);
+
+/**
+ * Like `frustbite_render`, but returns the result as WAV file bytes in `format` (a
+ * `FrustbiteWavFormat` value) instead of a handle. With no operations it converts any source to
+ * WAV. On success `*out` receives `*out_len` bytes to release with `frustbite_free_bytes`. Integer
+ * formats clamp to full scale. More than 4 GiB of sample data gives `InvalidParameter`.
+ *
+ * # Safety
+ * As for `frustbite_render`; `out` and `out_len` must be valid for a write.
+ */
+FrustbiteErrorCode frustbite_render_wav(const struct FrustbiteAudio *audio,
+                                        const struct FrustbiteAudio *const *sources,
+                                        size_t sources_len,
+                                        const uint8_t *ops,
+                                        size_t ops_len,
+                                        uint32_t format,
+                                        uint8_t **out,
+                                        size_t *out_len);
+
+/**
+ * Finds silent stretches: runs of at least `min_duration_ms` in which every channel stays
+ * below `threshold_db` dBFS (finite and `<= 0`, else `InvalidParameter`). On success `*out`
+ * receives `*out_len` values, a start and an end in microseconds per run (`[start, end)`, so
+ * `*out_len` is even), to release with `frustbite_free_u64`; no runs gives null and 0. Decodes
+ * the whole source without keeping it: call it off the UI thread.
+ *
+ * # Safety
+ * `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+ */
+FrustbiteErrorCode frustbite_detect_silence(const struct FrustbiteAudio *audio,
+                                            float threshold_db,
+                                            uint32_t min_duration_ms,
+                                            uint64_t **out,
+                                            size_t *out_len);
+
+/**
+ * Releases a buffer from `frustbite_detect_silence`. `len` must be the `*out_len` it returned.
+ * Passing null is a no-op.
+ *
+ * # Safety
+ * `ptr` must be null or a buffer returned by `frustbite_detect_silence` with the same `len`,
+ * not yet freed.
+ */
+void frustbite_free_u64(uint64_t *ptr, size_t len);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -7,12 +7,15 @@
 use std::ffi::{CStr, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use crate::decode::Decoded;
+use crate::edit;
 use crate::error::FrustbiteErrorCode;
 use crate::probe::{FrustbiteAudio, FrustbiteAudioInfo, FrustbiteContainer};
+use crate::wav::{self, FrustbiteWavFormat};
 use crate::waveform::FrustbiteWaveformMode;
 
 /// ABI contract version. Increment for incompatible signatures, layouts, or IDs.
-pub const FRUSTBITE_ABI_VERSION: u32 = 1;
+pub const FRUSTBITE_ABI_VERSION: u32 = 2;
 
 /// Returns `FRUSTBITE_ABI_VERSION`, so the Dart side can refuse a mismatched library.
 #[unsafe(no_mangle)]
@@ -366,6 +369,179 @@ pub unsafe extern "C" fn frustbite_free_bytes(ptr: *mut u8, len: usize) {
     }));
 }
 
+/// Reads the `sources` array and the `ops` JSON of a render call and runs the pipeline.
+///
+/// # Safety
+/// As for `frustbite_render`.
+unsafe fn render_pcm(
+    audio: *const FrustbiteAudio,
+    sources: *const *const FrustbiteAudio,
+    sources_len: usize,
+    ops: *const u8,
+    ops_len: usize,
+) -> Result<Decoded, FrustbiteErrorCode> {
+    if audio.is_null() || (sources.is_null() && sources_len > 0) || (ops.is_null() && ops_len > 0) {
+        return Err(FrustbiteErrorCode::InvalidPointer);
+    }
+    let handles: &[*const FrustbiteAudio] = if sources_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(sources, sources_len) }
+    };
+    if handles.iter().any(|handle| handle.is_null()) {
+        return Err(FrustbiteErrorCode::InvalidPointer);
+    }
+    let sources: Vec<&FrustbiteAudio> = handles.iter().map(|&handle| unsafe { &*handle }).collect();
+    let json: &[u8] = if ops_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(ops, ops_len) }
+    };
+    let ops = edit::parse_ops(json, sources.len())?;
+    edit::render(unsafe { &*audio }, &sources, &ops)
+}
+
+/// Decodes `audio`, applies the editing operations in `ops` and returns the result as a new
+/// handle (in-memory 32-bit float WAV) to release with `frustbite_free`. `audio` itself is not
+/// changed.
+///
+/// `ops` is `ops_len` bytes of UTF-8 JSON: an array of objects with an `"op"` field, one of
+/// `trim {start_us, end_us|null}`, `gain {db}`, `normalize {peak_db <= 0}`,
+/// `fade_in {duration_us}`, `fade_out {duration_us}`, `resample {sample_rate 1..=768000}`,
+/// `to_mono`, `to_stereo`, `trim_silence {threshold_db <= 0}`, `append {source, crossfade_us}`,
+/// `mix {source, gain_db, offset_us}`, run in order. `source` indexes `sources`, the
+/// `sources_len` extra handles. Malformed JSON, unknown operations or fields and out-of-range
+/// values give `InvalidParameter`. Everything is decoded in memory: call it off the UI thread.
+///
+/// # Safety
+/// `audio` and every entry of `sources` must be live handles; `sources` must point to
+/// `sources_len` handles and `ops` to `ops_len` bytes (either may be null when its length is
+/// 0); `out` must be valid for a pointer write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_render(
+    audio: *const FrustbiteAudio,
+    sources: *const *const FrustbiteAudio,
+    sources_len: usize,
+    ops: *const u8,
+    ops_len: usize,
+    out: *mut *mut FrustbiteAudio,
+) -> FrustbiteErrorCode {
+    guarded(|| {
+        if out.is_null() {
+            return FrustbiteErrorCode::InvalidPointer;
+        }
+        let result = unsafe { render_pcm(audio, sources, sources_len, ops, ops_len) }
+            .and_then(|pcm| wav::encode(&pcm, FrustbiteWavFormat::Float32))
+            .and_then(|bytes| FrustbiteAudio::open_memory(&bytes, Some(FrustbiteContainer::Wav)));
+        unsafe { publish(result, out) }
+    })
+}
+
+/// Like `frustbite_render`, but returns the result as WAV file bytes in `format` (a
+/// `FrustbiteWavFormat` value) instead of a handle. With no operations it converts any source to
+/// WAV. On success `*out` receives `*out_len` bytes to release with `frustbite_free_bytes`. Integer
+/// formats clamp to full scale. More than 4 GiB of sample data gives `InvalidParameter`.
+///
+/// # Safety
+/// As for `frustbite_render`; `out` and `out_len` must be valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_render_wav(
+    audio: *const FrustbiteAudio,
+    sources: *const *const FrustbiteAudio,
+    sources_len: usize,
+    ops: *const u8,
+    ops_len: usize,
+    format: u32,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> FrustbiteErrorCode {
+    guarded(|| {
+        if out.is_null() || out_len.is_null() {
+            return FrustbiteErrorCode::InvalidPointer;
+        }
+        let format = match FrustbiteWavFormat::from_u32(format) {
+            Ok(format) => format,
+            Err(code) => return code,
+        };
+        match unsafe { render_pcm(audio, sources, sources_len, ops, ops_len) }
+            .and_then(|pcm| wav::encode(&pcm, format))
+        {
+            Ok(bytes) => {
+                let (ptr, len) = leak_bytes(boxed_bytes(bytes));
+                unsafe {
+                    out.write(ptr);
+                    out_len.write(len);
+                }
+                FrustbiteErrorCode::Success
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// Finds silent stretches: runs of at least `min_duration_ms` in which every channel stays
+/// below `threshold_db` dBFS (finite and `<= 0`, else `InvalidParameter`). On success `*out`
+/// receives `*out_len` values, a start and an end in microseconds per run (`[start, end)`, so
+/// `*out_len` is even), to release with `frustbite_free_u64`; no runs gives null and 0. Decodes
+/// the whole source without keeping it: call it off the UI thread.
+///
+/// # Safety
+/// `audio` must be a live handle; `out` and `out_len` must be valid for a write.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_detect_silence(
+    audio: *const FrustbiteAudio,
+    threshold_db: f32,
+    min_duration_ms: u32,
+    out: *mut *mut u64,
+    out_len: *mut usize,
+) -> FrustbiteErrorCode {
+    guarded(|| {
+        if audio.is_null() || out.is_null() || out_len.is_null() {
+            return FrustbiteErrorCode::InvalidPointer;
+        }
+        match unsafe { &*audio }.detect_silence(threshold_db, min_duration_ms) {
+            Ok((runs, rate)) => {
+                let us = |frame: u64| {
+                    u64::try_from(u128::from(frame) * 1_000_000 / u128::from(rate.max(1)))
+                        .unwrap_or(u64::MAX)
+                };
+                let values: Vec<u64> = runs
+                    .iter()
+                    .flat_map(|run| [us(run.start), us(run.end)])
+                    .collect();
+                let len = values.len();
+                let ptr = if len == 0 {
+                    std::ptr::null_mut()
+                } else {
+                    Box::into_raw(values.into_boxed_slice()).cast::<u64>()
+                };
+                unsafe {
+                    out.write(ptr);
+                    out_len.write(len);
+                }
+                FrustbiteErrorCode::Success
+            }
+            Err(code) => code,
+        }
+    })
+}
+
+/// Releases a buffer from `frustbite_detect_silence`. `len` must be the `*out_len` it returned.
+/// Passing null is a no-op.
+///
+/// # Safety
+/// `ptr` must be null or a buffer returned by `frustbite_detect_silence` with the same `len`,
+/// not yet freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn frustbite_free_u64(ptr: *mut u64, len: usize) {
+    if ptr.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) });
+    }));
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use std::ffi::CString;
@@ -403,8 +579,8 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn abi_version_is_one() {
-        assert_eq!(frustbite_abi_version(), 1);
+    fn abi_version_is_two() {
+        assert_eq!(frustbite_abi_version(), 2);
     }
 
     #[test]
@@ -801,6 +977,199 @@ pub(crate) mod tests {
             );
             assert_eq!((a, a_len, b, b_len), (sentinel, 7, sentinel, 7));
             frustbite_free(audio);
+        }
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn render_round_trip_returns_a_new_handle() {
+        let audio = open_fixture("tone.wav");
+        let click = open_fixture("click.wav");
+        let ops = br#"[{"op":"trim","start_us":0,"end_us":500000},{"op":"to_mono"},
+            {"op":"append","source":0,"crossfade_us":0}]"#;
+        let sources = [click.cast_const()];
+        let mut out: *mut FrustbiteAudio = ptr::null_mut();
+        let mut info = zeroed_info();
+        unsafe {
+            let code = frustbite_render(
+                audio,
+                sources.as_ptr(),
+                1,
+                ops.as_ptr(),
+                ops.len(),
+                &mut out,
+            );
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            assert_eq!(
+                frustbite_get_info(out, &mut info),
+                FrustbiteErrorCode::Success
+            );
+            assert_eq!((info.channels, info.sample_rate), (1, 44_100));
+            assert!(info.total_frames > 22_050);
+            // The source is unchanged.
+            let mut source_info = zeroed_info();
+            frustbite_get_info(audio, &mut source_info);
+            assert_eq!(source_info.channels, 2);
+            frustbite_free(out);
+            frustbite_free(click);
+            frustbite_free(audio);
+        }
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn render_wav_without_ops_converts_and_errors_leave_out_untouched() {
+        let audio = open_fixture("tone.wav");
+        let (mut bytes, mut len) = (ptr::null_mut(), 0usize);
+        unsafe {
+            let code = frustbite_render_wav(
+                audio,
+                ptr::null(),
+                0,
+                ptr::null(),
+                0,
+                0,
+                &mut bytes,
+                &mut len,
+            );
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            let wav = std::slice::from_raw_parts(bytes, len);
+            // Same samples as the fixture (which also carries a LIST chunk before `data`).
+            let fixture = std::fs::read(format!("{FIXTURES}tone.wav")).unwrap();
+            assert_eq!(&wav[..4], b"RIFF");
+            assert_eq!(&wav[44..], &fixture[fixture.len() - (len - 44)..]);
+            frustbite_free_bytes(bytes, len);
+
+            let sentinel = 0x1234usize as *mut u8;
+            let (mut bytes, mut len) = (sentinel, 7usize);
+            let bad_json = b"[{\"op\":\"nope\"}]";
+            let null_source = [ptr::null::<FrustbiteAudio>()];
+            let cases = [
+                (
+                    audio.cast_const(),
+                    ptr::null(),
+                    0,
+                    ptr::null(),
+                    0,
+                    9,
+                    FrustbiteErrorCode::InvalidParameter,
+                ),
+                (
+                    audio.cast_const(),
+                    ptr::null(),
+                    0,
+                    bad_json.as_ptr(),
+                    bad_json.len(),
+                    0,
+                    FrustbiteErrorCode::InvalidParameter,
+                ),
+                (
+                    audio.cast_const(),
+                    null_source.as_ptr(),
+                    1,
+                    ptr::null(),
+                    0,
+                    0,
+                    FrustbiteErrorCode::InvalidPointer,
+                ),
+                (
+                    audio.cast_const(),
+                    ptr::null(),
+                    1,
+                    ptr::null(),
+                    0,
+                    0,
+                    FrustbiteErrorCode::InvalidPointer,
+                ),
+                (
+                    audio.cast_const(),
+                    ptr::null(),
+                    0,
+                    ptr::null(),
+                    3,
+                    0,
+                    FrustbiteErrorCode::InvalidPointer,
+                ),
+                (
+                    ptr::null(),
+                    ptr::null(),
+                    0,
+                    ptr::null(),
+                    0,
+                    0,
+                    FrustbiteErrorCode::InvalidPointer,
+                ),
+            ];
+            for (handle, sources, sources_len, ops, ops_len, format, expected) in cases {
+                let code = frustbite_render_wav(
+                    handle,
+                    sources,
+                    sources_len,
+                    ops,
+                    ops_len,
+                    format,
+                    &mut bytes,
+                    &mut len,
+                );
+                assert_eq!(code, expected);
+                assert_eq!((bytes, len), (sentinel, 7));
+            }
+            let mut handle = 0x1234usize as *mut FrustbiteAudio;
+            let code = frustbite_render(
+                audio,
+                ptr::null(),
+                0,
+                bad_json.as_ptr(),
+                bad_json.len(),
+                &mut handle,
+            );
+            assert_eq!(code, FrustbiteErrorCode::InvalidParameter);
+            assert_eq!(handle as usize, 0x1234);
+            assert_eq!(
+                frustbite_render(audio, ptr::null(), 0, ptr::null(), 0, ptr::null_mut()),
+                FrustbiteErrorCode::InvalidPointer
+            );
+            frustbite_free(audio);
+        }
+    }
+
+    #[cfg(feature = "flac")]
+    #[test]
+    fn detect_silence_round_trip() {
+        let audio = open_fixture("silence.flac");
+        let (mut values, mut len) = (ptr::null_mut(), 0usize);
+        unsafe {
+            let code = frustbite_detect_silence(audio, -50.0, 100, &mut values, &mut len);
+            assert_eq!(code, FrustbiteErrorCode::Success);
+            assert_eq!(len, 2);
+            let run = std::slice::from_raw_parts(values, len);
+            assert_eq!(run[0], 0);
+            assert!(run[1] > 900_000, "{run:?}");
+            frustbite_free_u64(values, len);
+
+            let sentinel = 0x1234usize as *mut u64;
+            let (mut values, mut len) = (sentinel, 7usize);
+            assert_eq!(
+                frustbite_detect_silence(audio, 1.0, 100, &mut values, &mut len),
+                FrustbiteErrorCode::InvalidParameter
+            );
+            assert_eq!(
+                frustbite_detect_silence(ptr::null(), -50.0, 100, &mut values, &mut len),
+                FrustbiteErrorCode::InvalidPointer
+            );
+            assert_eq!((values, len), (sentinel, 7));
+            frustbite_free_u64(ptr::null_mut(), 0);
+            frustbite_free(audio);
+        }
+        let tone = open_fixture("tone.flac");
+        let (mut values, mut len) = (std::ptr::dangling_mut::<u64>(), 9usize);
+        unsafe {
+            assert_eq!(
+                frustbite_detect_silence(tone, -50.0, 100, &mut values, &mut len),
+                FrustbiteErrorCode::Success
+            );
+            assert_eq!((values, len), (ptr::null_mut(), 0));
+            frustbite_free(tone);
         }
     }
 }

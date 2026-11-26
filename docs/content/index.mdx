@@ -1,6 +1,6 @@
 ---
 title: Frustbite
-description: Read audio metadata, waveforms and PCM from Dart, powered by Rust.
+description: Read and edit audio from Dart, powered by Rust.
 sidebar:
   label: Introduction
   order: 0
@@ -8,12 +8,15 @@ sidebar:
 
 Frustbite opens an audio file or a byte buffer and tells you what is inside:
 codec and stream info, tags, cover art, a waveform ready to draw, or the fully
-decoded PCM. The work is done by a Rust crate through FFI and Dart build hooks,
+decoded PCM. It also edits: trim, join with crossfades, mix, fade, normalize,
+resample, remove silence, and save the result as WAV. The work is done by a Rust crate through FFI and Dart build hooks,
 or through WebAssembly in the browser. The Dart API is pure Dart.
 
 :::note
-Stage 1 is read-only. Frustbite supports Android, iOS, Linux, macOS, Windows
-and the web. Editing, encoding and a CLI are on the roadmap.
+Frustbite supports Android, iOS, Linux, macOS, Windows and the web. Version
+0.0.2 on pub.dev reads audio; editing comes in the next release (see
+[Editing](/editing)). Compressed encoders (FLAC, Opus), tag writing and a CLI
+are on the roadmap.
 :::
 
 ## Install
@@ -43,6 +46,19 @@ try {
 }
 ```
 
+## Edit and save
+
+```dart
+final ringtone = Frustbite.fromFile('song.mp3');
+ringtone
+    .edit()
+    .trim(start: const Duration(seconds: 45), end: const Duration(seconds: 75))
+    .fadeOut(const Duration(seconds: 2))
+    .normalize()
+    .saveWav('ringtone.wav');
+ringtone.dispose();
+```
+
 ## What next?
 
 <CardGroup>
@@ -51,6 +67,9 @@ try {
   </Card>
   <Card title="Reading audio" href="/reading-audio">
     Info, tags, cover art, waveforms, decoding and async variants.
+  </Card>
+  <Card title="Editing" href="/editing">
+    Trim, join, mix, fade, normalize, resample and save as WAV.
   </Card>
   <Card title="WebAssembly" href="/webassembly">
     Use the byte-based API in browser applications.

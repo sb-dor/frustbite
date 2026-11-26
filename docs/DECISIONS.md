@@ -4,7 +4,8 @@ The rulings that shaped frustbite, with their status. Stage 1 rulings (R1 to
 R27) were made while building the reading stage; the distribution rulings (D-A
 to D-L, plus two deviations) came with distribution v2 (version 0.0.2). The
 design of distribution v2 follows [PlugFox/ws](https://github.com/PlugFox/ws)
-(MIT); the code is written for frustbite.
+(MIT); the code is written for frustbite. The editing rulings (E-A to E-G)
+came with stage 2.
 
 Status: **adopted** (in force), **superseded** (replaced by a later entry),
 **lifted** (the restriction no longer applies).
@@ -187,3 +188,65 @@ variable replaces the config's rustflags). Only CI-built libraries are staged
 for publishing. The local `aarch64-linux-gnu-gcc` linker table left
 `native/.cargo/config.toml`; `tool/build.dart` sets the linker through the
 environment for a plain arm64 Linux cross build. Status: adopted.
+
+## Stage 2 rulings (editing)
+
+The design is in
+[superpowers/specs/2026-11-26-frustbite-stage2-editing-design.md](superpowers/specs/2026-11-26-frustbite-stage2-editing-design.md).
+
+### E-A. One render call with a JSON operation list
+
+`frustbite_render` and `frustbite_render_wav` take the operations as a UTF-8
+JSON array (`{"op": "trim", ...}`, serde internally tagged, unknown operations
+and fields rejected) plus an array of extra handles that `append` and `mix`
+refer to by index. New operations add JSON tags, not C signatures, and the FFI
+and wasm backends pass the same bytes. Rejected: a `#[repr(C)]` operation array
+(layout duplicated by hand for wasm, changes with every parameter) and one call
+per operation (the PCM would cross the boundary each step). Status: adopted.
+
+### E-B. The rendered result is a float32 WAV handle
+
+`render()` returns a normal handle opened from an in-memory 32-bit float WAV,
+so the whole API (info, waveform, decode, another edit, toWav) works on it with
+no new source type, and chained renders lose no precision. Status: adopted.
+
+### E-C. WAV writing comes with stage 2
+
+Without an encoder an edit could not be saved, so WAV (16-bit, 24-bit, 32-bit
+float) is written by hand in `native/src/wav.rs` (no dependency). Integer
+formats use `round(x * 2^(n-1))`, clamped, so a WAV of the same depth round
+trips unchanged. FLAC and Opus encoders stay in stage 3. Status: adopted.
+
+### E-D. Resampling with rubato's synchronous FFT resampler
+
+`rubato` 5.1 (MIT OR Apache-2.0, pure Rust, builds for wasm32), `Fft` with
+`process_all`, which trims the resampler delay. It adds realfft/rustfft and a
+few small crates and grows each native library by about 0.5 MB (macOS arm64:
+2.47 MB to 3.0 MB; wasm: 2.3 MB to 2.65 MB). A hand-written windowed sinc was
+the alternative: no dependency, but slower and ours to tune. Status: adopted.
+
+### E-E. Semantics of the operations
+
+Operations run in order on the current PCM. `append` and `mix` convert the
+other source to the current format (channels: average to mono, duplicate from
+mono, else channel `i` from `i % n`; then the rate). Fades are linear,
+crossfades equal-power (sin/cos). `mix` has no limiter; integer WAV output
+clamps. `toStereo` from more than two channels keeps the first two.
+`trimSilence` and `detectSilence` test every channel against the threshold.
+Status: adopted.
+
+### E-F. `detectSilence` streams; it takes milliseconds as `u32`
+
+It runs over `PacketDecoder` without keeping the PCM. The minimum duration is a
+`u32` in milliseconds and the threshold an `f32`: `u64` parameters become
+`BigInt` in JavaScript, which the wasm backend would have to special-case. The
+result is microseconds as `u64` pairs, freed with the new `frustbite_free_u64`.
+Status: adopted.
+
+### E-G. ABI version 2; 16 exports
+
+The Dart package needs the new symbols, so a 0.0.2 library must be refused:
+`FRUSTBITE_ABI_VERSION` and `frustbiteAbiVersion` are 2, and
+`tool/verify_native.sh` expects 16 exports. The iOS libraries still import
+only `stat` and `fstat` among the required-reason APIs (`nm -u` rechecked, D-K
+unchanged). Status: adopted.

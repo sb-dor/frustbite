@@ -6,6 +6,7 @@ A pure-Dart audio library backed by a Rust crate through FFI and Dart build hook
 
 - `native/`: Rust crate (`staticlib` + `cdylib`).
   - `src/lib.rs`: crate entry; `src/ffi.rs`: C ABI; `src/error.rs`: `FrustbiteErrorCode`; `src/wasm_alloc.rs`: wasm32-only alloc/dealloc.
+  - Editing: `src/edit.rs` (JSON operation list `Op`, `render`, rubato resampling), `src/wav.rs` (WAV writer, `FrustbiteWavFormat`), `src/silence.rs` (streaming `detect_silence`).
   - `include/frustbite.h`: generated C header.
   - `cbindgen.toml`, `rust-toolchain.toml`, `.cargo/config.toml`.
 - `packages/frustbite/`: the Dart package.
@@ -15,6 +16,7 @@ A pure-Dart audio library backed by a Rust crate through FFI and Dart build hook
   - `tool/stage_package.dart (--from-dir <dir> | --from-release <tag>) --out <dir>`: stages the package outside the repo for publishing: the git-tracked files, `native/` as `rust/` (Cargo.toml (plus an empty `[workspace]` table), Cargo.lock, build.rs, a trimmed `rust-toolchain.toml` (channel + `profile = "minimal"`; the hook adds the one target), `src/`, and `cargo-config.toml`, the Windows `+crt-static` tables of `.cargo/config.toml`: pub drops hidden files, so the hook passes it with `--config`), the libraries as `prebuilt/<os>-<arch>[-sim]/<one file name>` and `prebuilt/checksums.json`. Fails with fewer than 12 libraries (`--allow-partial` is for local tests). `tool/check_pubignore.dart <staged dir>` checks the staged `.pubignore` keeps `prebuilt/` and `rust/` and drops `rust/target/`.
   - `lib/src/bindings/bindings.dart`: generated `@Native` bindings; `lib/src/enums.dart`: generated shared enums.
   - `lib/src/abi.dart`: ABI constant and check; `tool/generate_bindings.dart`: generator.
+  - `lib/src/audio_edit.dart` (`part of` `frustbite_base.dart`): the lazy `AudioEdit` builder; it encodes the operations as JSON for `frustbite_render`/`frustbite_render_wav`.
   - `lib/src/backend.dart`: picks `backend_native.dart` (FFI) or `web/backend_web.dart` + `web/wasm_runtime.dart` (`dart:js_interop` over `frustbite.wasm`); both expose the same `BackendAudio` surface.
   - `tool/build_wasm.dart`: builds `frustbite.wasm` (release, `wasm32-unknown-unknown`) and copies it to the given path.
   - `test/`: Dart tests; `test/fixtures/`: audio fixtures.

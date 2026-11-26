@@ -2,7 +2,7 @@ import { defineConfig } from "blume";
 
 export default defineConfig({
   title: "Frustbite",
-  description: "Read audio metadata, waveforms and PCM from Dart, powered by Rust.",
+  description: "Read and edit audio from Dart, powered by Rust.",
   content: {
     root: "content",
   },

@@ -7,11 +7,13 @@
 [![pub package](https://img.shields.io/pub/v/frustbite.svg)](https://pub.dev/packages/frustbite)
 -->
 
-Read audio from pure Dart: stream info, tags, cover art, waveforms and decoded
-PCM. A Rust crate does the work through FFI and Dart build hooks on native
-platforms and through WebAssembly on the web.
+Read and edit audio from pure Dart: stream info, tags, cover art, waveforms and
+decoded PCM; trim, join, mix, fade, normalize, resample and save as WAV. A Rust
+crate does the work through FFI and Dart build hooks on native platforms and
+through WebAssembly on the web.
 
-Stage 1 is read-only. Editing and encoding are on the [roadmap](#roadmap).
+Editing is unreleased: it is in the repository and comes in the release after
+0.0.2. Compressed encoders and tag writing are on the [roadmap](#roadmap).
 
 Full documentation: <https://sb-dor.github.io/frustbite/>.
 
@@ -168,6 +170,35 @@ a later event-loop turn; it still runs on the main thread.
 final waveform = await audio.waveformAsync(buckets: 200);
 ```
 
+## Editing
+
+`edit()` starts a lazy chain of operations; a terminal call runs it in one
+native call and never changes the source:
+
+```dart
+final voice = Frustbite.fromFile('voice.m4a');
+final clean = voice
+    .edit()
+    .trimSilence()
+    .fadeIn(const Duration(milliseconds: 200))
+    .fadeOut(const Duration(milliseconds: 500))
+    .normalize()
+    .render(); // a new Frustbite; or toWav() / saveWav(path)
+clean.saveWav('voice.wav');
+clean.dispose();
+voice.dispose();
+```
+
+Operations: `trim`, `gain`, `normalize`, `fadeIn`, `fadeOut`, `resample`,
+`toMono`, `toStereo`, `trimSilence`, `append` (with an optional crossfade) and
+`mix`; `Frustbite.concat([...], crossfade: ...)` joins several sources, and
+`detectSilence()` finds the pauses. `toWav`/`saveWav` write 16-bit, 24-bit or
+32-bit float WAV, so `audio.toWav()` also converts any supported format to WAV.
+Every terminal has an async form (`renderAsync`, `toWavAsync`,
+`saveWavAsync`). Editing works in memory; see the
+[Editing guide](https://sb-dor.github.io/frustbite/editing) for the semantics
+of each operation.
+
 ## Web
 
 Download `frustbite.wasm` from the GitHub Release `frustbite-v<version>`
@@ -179,7 +210,7 @@ await Frustbite.initialize();
 final audio = Frustbite.fromMemory(bytes);
 ```
 
-`fromFile` throws `UnsupportedError` on the web. On pages whose CSP forbids
+`fromFile` and `saveWav` throw `UnsupportedError` on the web (use `toWav`). On pages whose CSP forbids
 `unsafe-eval`, a Rust panic inside wasm under dart2wasm escapes as a raw
 JavaScript error instead of `UnknownFrustbiteException`.
 
@@ -250,18 +281,20 @@ the first build.
 
 ## Performance
 
-On an Apple M3 Pro, 180 s of 44.1 kHz stereo mp3 decodes in 95 ms. That is
-roughly on par with the native `audio_decode` (0.87x) and 83x faster than the
-pure-Dart `glint_audio_pure`. See [`packages/benchmark`](https://github.com/sb-dor/frustbite/blob/main/packages/benchmark/README.md)
+On an Apple M3 Pro, 180 s of 44.1 kHz stereo mp3 decodes in 98 ms. That is
+roughly on par with the native `audio_decode` (0.91x) and 81x faster than the
+pure-Dart `glint_audio_pure`. Resampling the same length to 48 kHz takes 176 ms. See [`packages/benchmark`](https://github.com/sb-dor/frustbite/blob/main/packages/benchmark/README.md)
 for the full table, including the rows where Frustbite is slower.
 
 ## Roadmap
 
-1. **Reading (this release).** `fromFile`/`fromMemory`, `info`, `tags`,
+1. **Reading (0.0.2).** `fromFile`/`fromMemory`, `info`, `tags`,
    `cover`, `waveform`, `decode` and their async variants; web support.
-2. **Editing.** `trim`, `concat`, `gain`, `normalize`, `fadeIn`/`fadeOut`,
-   `resample`, `toMono`/`toStereo`, as a lazy pipeline run in one native call.
-3. **Writing.** wav, flac and opus encoders, `encode` and `saveToFile`, and
+2. **Editing (unreleased).** `trim`, `concat` with crossfades, `gain`,
+   `normalize`, `fadeIn`/`fadeOut`, `resample`, `toMono`/`toStereo`,
+   `trimSilence`, `detectSilence` and `mix`, as a lazy pipeline run in one
+   native call; WAV writing.
+3. **Writing.** flac and opus encoders, `encode` and `saveToFile`, and
    tag writing without re-encoding.
 4. **Large files and CLI.** Streaming decode as a `Stream` of PCM chunks and a
    `frustbite info|waveform|convert|trim` command line tool.

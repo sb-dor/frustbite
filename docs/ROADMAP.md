@@ -1,21 +1,27 @@
 # Roadmap
 
-Stage 1 (reading) and distribution v2 (version 0.0.2: bundled prebuilt
-libraries, offline hermetic builds) are done. The rulings behind them are in
+Stage 1 (reading), distribution v2 (version 0.0.2: bundled prebuilt
+libraries, offline hermetic builds) and stage 2 (editing, unreleased) are done. The rulings behind them are in
 [DECISIONS.md](DECISIONS.md). Each stage ends in a working state, with tests
 green on every CI target.
 
 ## Stages
 
-### Stage 2: Editing
+### Stage 2: Editing (done, unreleased)
 
-`trim`, `concat`, `gain`, `normalize`, `fadeIn`/`fadeOut`, `resample`,
-`toMono`/`toStereo`, as a lazy pipeline that runs in one native call. A
-resampling benchmark joins the benchmark package.
+`trim`, `concat` with crossfades, `gain`, `normalize`, `fadeIn`/`fadeOut`,
+`resample`, `toMono`/`toStereo`, `trimSilence`, `detectSilence` and `mix`, as a
+lazy pipeline that runs in one native call, plus WAV writing (E-A to E-G in
+DECISIONS). The benchmark package has resampling, editing and WAV encoding
+rows.
+
+Follow-ups left for later: loudness normalization (`normalizeLoudness`, LUFS),
+`reverse`, `pad`, channel selection, and streaming edits for large files
+(stage 4).
 
 ### Stage 3: Writing
 
-Encoders for wav, flac and opus, with `encode` and `saveToFile`, and tag
+Encoders for flac and opus (wav is written since stage 2), with `encode` and `saveToFile`, and tag
 writing without re-encoding. Tags are rewritten through `lofty`, and the result
 goes to a **new** file by default (`writeTags(tags, to: path)`). Changing the
 source file needs an explicit `inPlace: true`, which writes a temporary file and

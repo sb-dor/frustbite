@@ -1,35 +1,48 @@
 {
-  "timestamp": "2026-11-24T13:36:14.922581",
+  "timestamp": "2026-11-26T12:52:35.710158",
   "machine": "Apple M3 Pro, 11 cores",
   "dart": "3.14.0",
   "results": {
     "info_mp3": {
-      "frustbite_us": 959.0
+      "frustbite_us": 866.5
     },
     "decode_mp3": {
-      "frustbite_us": 95409.0,
-      "audio_decode_us": 83160.5,
-      "glint_audio_pure_us": 7955930.0
+      "frustbite_us": 97978.0,
+      "audio_decode_us": 88786.0,
+      "glint_audio_pure_us": 7964908.5
     },
     "decode_vorbis": {
-      "frustbite_us": 106695.5,
-      "audio_decode_us": 124731.0
+      "frustbite_us": 106220.0,
+      "audio_decode_us": 134482.0
     },
     "decode_flac": {
-      "frustbite_us": 78317.5
+      "frustbite_us": 82658.5
     },
     "decode_wav": {
-      "frustbite_us": 24916.0,
-      "wav_us": 225566.0,
-      "audio_decode_us": 29248.0
+      "frustbite_us": 25721.5,
+      "wav_us": 234853.5,
+      "audio_decode_us": 29796.5
     },
     "waveform_mp3_1000": {
-      "frustbite_us": 93139.5,
-      "audio_decode_us": 88746.0
+      "frustbite_us": 99200.0,
+      "audio_decode_us": 95494.5
     },
     "tags_mp3": {
-      "frustbite_us": 95.0,
-      "audio_metadata_reader_us": 89.0
+      "frustbite_us": 97.5,
+      "audio_metadata_reader_us": 117.5
+    },
+    "resample_wav_48k": {
+      "frustbite_us": 175695.0
+    },
+    "resample_wav_16k_mono": {
+      "frustbite_us": 90256.5
+    },
+    "edit_wav": {
+      "frustbite_us": 36622.5
+    },
+    "encode_wav": {
+      "frustbite_us": 34483.0,
+      "wav_us": 449659.0
     }
   }
 }
