@@ -980,7 +980,7 @@ pub(crate) mod tests {
         }
     }
 
-    #[cfg(feature = "wav")]
+    // The WAV reader is always compiled in (Cargo.toml), so no feature gate.
     #[test]
     fn render_round_trip_returns_a_new_handle() {
         let audio = open_fixture("tone.wav");
@@ -1016,7 +1016,7 @@ pub(crate) mod tests {
         }
     }
 
-    #[cfg(feature = "wav")]
+    // The WAV reader is always compiled in (Cargo.toml), so no feature gate.
     #[test]
     fn render_wav_without_ops_converts_and_errors_leave_out_untouched() {
         let audio = open_fixture("tone.wav");

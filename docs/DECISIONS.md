@@ -4,7 +4,7 @@ The rulings that shaped frustbite, with their status. Stage 1 rulings (R1 to
 R27) were made while building the reading stage; the distribution rulings (D-A
 to D-L, plus two deviations) came with distribution v2 (version 0.0.2). The
 design of distribution v2 follows [PlugFox/ws](https://github.com/PlugFox/ws)
-(MIT); the code is written for frustbite. The editing rulings (E-A to E-G)
+(MIT); the code is written for frustbite. The editing rulings (E-A to E-H)
 came with stage 2.
 
 Status: **adopted** (in force), **superseded** (replaced by a later entry),
@@ -208,7 +208,18 @@ per operation (the PCM would cross the boundary each step). Status: adopted.
 
 `render()` returns a normal handle opened from an in-memory 32-bit float WAV,
 so the whole API (info, waveform, decode, another edit, toWav) works on it with
-no new source type, and chained renders lose no precision. Status: adopted.
+no new source type, and chained renders lose no precision. For that the WAV
+demuxer and PCM decoder are always compiled in, even when `formats` leaves out
+`wav`. Status: adopted.
+
+### E-H. Limits that fail before allocating
+
+The review of the branch found that a crafted header could exhaust memory. A
+source rate outside 1 kHz to 768 kHz cannot be resampled (also when `append` or
+`mix` converts it): `UnsupportedFormat`, because rubato's FFT buffers grow with
+the rate ratio. An operation that would grow the result past what a 16-bit WAV
+holds (`u32::MAX / 2` samples) fails with `InvalidParameter` before it
+allocates. Status: adopted.
 
 ### E-C. WAV writing comes with stage 2
 

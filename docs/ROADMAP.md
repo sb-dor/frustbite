@@ -11,7 +11,7 @@ green on every CI target.
 
 `trim`, `concat` with crossfades, `gain`, `normalize`, `fadeIn`/`fadeOut`,
 `resample`, `toMono`/`toStereo`, `trimSilence`, `detectSilence` and `mix`, as a
-lazy pipeline that runs in one native call, plus WAV writing (E-A to E-G in
+lazy pipeline that runs in one native call, plus WAV writing (E-A to E-H in
 DECISIONS). The benchmark package has resampling, editing and WAV encoding
 rows.
 

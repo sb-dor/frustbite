@@ -180,7 +180,6 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "wav")]
     #[test]
     fn every_format_reads_back() {
         let samples: Vec<f32> = (0..2000).map(|i| (i as f32 * 0.01).sin() * 0.8).collect();
@@ -207,7 +206,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "wav")]
     #[test]
     fn pcm16_round_trip_is_lossless() {
         let bytes = std::fs::read(concat!(
@@ -227,7 +225,6 @@ mod tests {
         assert_eq!(again.samples, decoded.samples);
     }
 
-    #[cfg(feature = "wav")]
     #[test]
     fn empty_float_wav_opens() {
         let bytes = encode(&pcm(vec![], 44_100, 1), FrustbiteWavFormat::Float32).unwrap();

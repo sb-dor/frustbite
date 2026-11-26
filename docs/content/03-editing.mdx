@@ -163,7 +163,12 @@ Each `SilenceRange` has `start`, `end` (exclusive) and `duration`.
 
 `audio.toWav()` and `audio.saveWav(path)` without `edit()` convert any
 supported format to WAV. RIFF limits a WAV file to 4 GiB of samples. A larger
-result throws `InvalidParameterException`.
+result throws `InvalidParameterException`. An edit that would grow past what a
+16-bit WAV can hold fails the same way before it allocates.
+
+`resample` (and `append` or `mix` of a source with another rate) needs a
+source rate between 1 kHz and 768 kHz. Otherwise it throws
+`UnsupportedFormatException`.
 
 ## Memory and the web
 

@@ -12,8 +12,26 @@ use crate::decode::Decoded;
 use crate::error::FrustbiteErrorCode as Code;
 use crate::probe::FrustbiteAudio;
 
-/// Highest sample rate `resample` accepts.
-pub const MAX_SAMPLE_RATE: u32 = 768_000;
+/// Highest sample rate `resample` accepts, as a target or a source.
+pub(crate) const MAX_SAMPLE_RATE: u32 = 768_000;
+
+/// Lowest source rate `resample` accepts. The FFT resampler's buffers grow with
+/// `target / source`, so a header claiming a few Hz would allocate gigabytes.
+pub(crate) const MIN_SOURCE_SAMPLE_RATE: u32 = 1_000;
+
+/// Most samples a result may hold: what a 16-bit WAV (4 GiB of data) can carry. Checked
+/// before an operation grows the buffer, so an impossible edit fails fast instead of
+/// committing the memory first.
+pub(crate) const MAX_SAMPLES: usize = (u32::MAX / 2) as usize;
+
+/// `InvalidParameter` when `samples` exceeds `MAX_SAMPLES`.
+fn check_len(samples: usize) -> Result<(), Code> {
+    if samples > MAX_SAMPLES {
+        Err(Code::InvalidParameter)
+    } else {
+        Ok(())
+    }
+}
 
 /// One editing step. JSON: an object with `"op"` set to the snake_case variant name and the
 /// fields below; unknown operations or fields are rejected.
@@ -30,7 +48,8 @@ pub enum Op {
     FadeIn { duration_us: u64 },
     /// Linear fade to silence over the last `duration_us`.
     FadeOut { duration_us: u64 },
-    /// Converts to `sample_rate` Hz (1..=768000).
+    /// Converts to `sample_rate` Hz (1..=768000). The source rate must be in
+    /// 1000..=768000 (`UnsupportedFormat` otherwise).
     Resample { sample_rate: u32 },
     /// Averages every channel into one. (Empty struct variants, so `deny_unknown_fields`
     /// applies to them too.)
@@ -214,7 +233,14 @@ impl Decoded {
         }
         let frames = self.frames();
         if frames > 0 {
+            // The rate comes from the file header: refuse values that would make the
+            // resampler's buffers explode.
+            if !(MIN_SOURCE_SAMPLE_RATE..=MAX_SAMPLE_RATE).contains(&self.sample_rate) {
+                return Err(Code::UnsupportedFormat);
+            }
             let ch = self.channel_count();
+            let out_frames = u128::from(rate) * frames as u128 / u128::from(self.sample_rate) + 1;
+            check_len(usize::try_from(out_frames * ch as u128).unwrap_or(usize::MAX))?;
             let input =
                 InterleavedSlice::new(&self.samples[..], ch, frames).map_err(|_| Code::Unknown)?;
             let mut resampler = Fft::<f32>::new(
@@ -247,6 +273,11 @@ impl Decoded {
         let n = us_to_frames(crossfade_us, self.sample_rate)
             .min(self.frames())
             .min(other.frames());
+        check_len(
+            self.samples
+                .len()
+                .saturating_add(other.samples.len() - n * ch),
+        )?;
         let overlap_start = (self.frames() - n) * ch;
         for i in 0..n {
             let t = (i as f32 + 0.5) / n as f32 * std::f32::consts::FRAC_PI_2;
@@ -270,6 +301,7 @@ impl Decoded {
         let end = offset
             .checked_add(other.samples.len())
             .ok_or(Code::InvalidParameter)?;
+        check_len(end)?;
         if end > self.samples.len() {
             self.samples
                 .try_reserve_exact(end - self.samples.len())
@@ -537,6 +569,37 @@ mod tests {
         let mut empty = flat(0.0, 0, 8000, 2);
         empty.resample(48_000).unwrap();
         assert_eq!((empty.frames(), empty.sample_rate), (0, 48_000));
+    }
+
+    #[test]
+    fn resample_refuses_absurd_source_rates() {
+        for rate in [1, 999, 3_000_000_019] {
+            let mut p = flat(0.1, 10, rate, 1);
+            assert_eq!(p.resample(44_100), Err(Code::UnsupportedFormat), "{rate}");
+        }
+        // Appending such a source converts it, so it is refused too.
+        let mut a = flat(0.0, 10, 44_100, 1);
+        assert_eq!(
+            a.append(flat(0.1, 10, 1, 1), 0),
+            Err(Code::UnsupportedFormat)
+        );
+        // An empty source only changes its rate.
+        let mut empty = flat(0.0, 0, 1, 1);
+        empty.resample(44_100).unwrap();
+    }
+
+    #[test]
+    fn growth_past_the_wav_limit_fails_before_allocating() {
+        let mut a = flat(0.0, 10, 48_000, 2);
+        // A day at 48 kHz stereo: about 8.3e9 samples.
+        let offset_us = 24 * 3600 * 1_000_000;
+        assert_eq!(
+            a.mix(flat(1.0, 10, 48_000, 2), 0.0, offset_us),
+            Err(Code::InvalidParameter)
+        );
+        assert_eq!(a.samples.len(), 20);
+        assert_eq!(check_len(MAX_SAMPLES), Ok(()));
+        assert_eq!(check_len(MAX_SAMPLES + 1), Err(Code::InvalidParameter));
     }
 
     #[test]

@@ -370,5 +370,3 @@ final class FrustbiteAudioInfo extends ffi.Struct {
     ..ref.total_frames = total_frames
     ..ref.duration_us = duration_us;
 }
-
-const int MAX_SAMPLE_RATE = 768000;

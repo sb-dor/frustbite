@@ -8,11 +8,6 @@
 #include <stdlib.h>
 
 /**
- * Highest sample rate `resample` accepts.
- */
-#define MAX_SAMPLE_RATE 768000
-
-/**
  * ABI contract version. Increment for incompatible signatures, layouts, or IDs.
  */
 #define FRUSTBITE_ABI_VERSION 2
