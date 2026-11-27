@@ -30,5 +30,5 @@ so that "Open file" can read the picked file.
 
 ## Samples
 
-`assets/demo.mp3` is synthesised by `tool/generate_demo.sh` (needs ffmpeg) and is
-released under CC0. `tone.*` are the library's test fixtures.
+`assets/demo.mp3` and its cover (drawn from its own waveform) are synthesised by
+`tool/generate_demo.sh` (needs ffmpeg) and are released under CC0. `tone.*` are the library's test fixtures.

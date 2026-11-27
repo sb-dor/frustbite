@@ -3,9 +3,11 @@
 [![CI](https://github.com/sb-dor/frustbite/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/sb-dor/frustbite/actions/workflows/ci.yaml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-sb--dor.github.io%2Ffrustbite-informational)](https://sb-dor.github.io/frustbite/)
-<!-- Enable after the first pub.dev release; the badge shows "not found" before that.
 [![pub package](https://img.shields.io/pub/v/frustbite.svg)](https://pub.dev/packages/frustbite)
--->
+
+<p align="center">
+  <img src="packages/frustbite/doc/showcase.webp" alt="frustbite: the showcase app on iPhone in light and dark mode, with stream info, tags, cover art and a waveform, next to an editing example" width="100%">
+</p>
 
 **Read and edit audio from pure Dart: info, tags, cover art, waveforms, PCM,
 and a lazy editing pipeline with WAV output, powered by a Rust core through FFI
@@ -32,12 +34,9 @@ how it compares with other Dart audio packages in the
 
 ## Showcase
 
-The [Flutter showcase](packages/showcase/README.md) opens an audio file and
-shows its info, tags, cover and waveform (iPhone):
-
-<p align="center">
-  <img src="docs/images/showcase-ios.png" alt="frustbite showcase on iPhone: stream info, tags and waveform" width="300">
-</p>
+The [Flutter showcase](packages/showcase/README.md), pictured at the top, opens
+an audio file or a bundled sample and shows its stream info, tags, cover art and
+waveform. It runs on every platform frustbite supports.
 
 ## Benchmarks
 

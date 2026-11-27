@@ -23,7 +23,11 @@ class ShowcaseApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
     title: 'Frustbite showcase',
+    debugShowCheckedModeBanner: false,
     theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal)),
+    darkTheme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.dark),
+    ),
     home: const ShowcasePage(),
   );
 }

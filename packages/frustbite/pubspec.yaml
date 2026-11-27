@@ -1,7 +1,13 @@
 name: frustbite
-description: Pure-Dart audio library backed by a Rust crate via FFI and Dart build hooks.
+description: "Read and edit audio in Dart and Flutter: decode MP3, AAC, FLAC, Opus and more, read tags and cover art, draw waveforms, trim, mix and save as WAV."
 version: 0.0.3
 repository: https://github.com/sb-dor/frustbite
+homepage: https://sb-dor.github.io/frustbite/
+issue_tracker: https://github.com/sb-dor/frustbite/issues
+topics: [audio, waveform, ffi, wasm, rust]
+screenshots:
+  - description: "The frustbite showcase app on iPhone: stream info, tags, cover art and a waveform, next to an editing example."
+    path: doc/showcase.webp
 resolution: workspace
 
 environment:
