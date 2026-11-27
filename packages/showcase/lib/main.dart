@@ -7,6 +7,10 @@ import 'package:flutter/services.dart';
 import 'package:frustbite/frustbite.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'editor_page.dart';
+import 'playback.dart';
+import 'waveform_painter.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Required on web (loads web/frustbite.wasm), a no-op on native platforms.
@@ -18,7 +22,15 @@ const _samples = ['demo.mp3', 'tone.mp3', 'tone.opus', 'tone.m4a'];
 const _maxContentWidth = 720.0;
 
 class ShowcaseApp extends StatelessWidget {
-  const ShowcaseApp({super.key});
+  const ShowcaseApp({
+    super.key,
+    this.playback = audioPlayersPlayback,
+    this.saveFile = saveWithFilePicker,
+  });
+
+  /// How the editor plays audio and saves files; tests pass fakes.
+  final PlaybackFactory playback;
+  final SaveFile saveFile;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -28,7 +40,7 @@ class ShowcaseApp extends StatelessWidget {
     darkTheme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.dark),
     ),
-    home: const ShowcasePage(),
+    home: ShowcasePage(playback: playback, saveFile: saveFile),
   );
 }
 
@@ -42,7 +54,10 @@ class _Loaded {
 }
 
 class ShowcasePage extends StatefulWidget {
-  const ShowcasePage({super.key});
+  const ShowcasePage({super.key, required this.playback, required this.saveFile});
+
+  final PlaybackFactory playback;
+  final SaveFile saveFile;
 
   @override
   State<ShowcasePage> createState() => _ShowcasePageState();
@@ -106,6 +121,20 @@ class _ShowcasePageState extends State<ShowcasePage> {
     }
   }
 
+  void _edit(_Loaded loaded) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => EditorPage(
+          name: loaded.name,
+          source: loaded.audio,
+          waveform: loaded.waveform,
+          playback: widget.playback,
+          saveFile: widget.saveFile,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final loaded = _loaded;
@@ -152,12 +181,22 @@ class _ShowcasePageState extends State<ShowcasePage> {
                         width: double.infinity,
                         child: CustomPaint(
                           key: const ValueKey('waveform'),
-                          painter: _WaveformPainter(
+                          painter: WaveformPainter(
                             loaded.waveform,
                             Theme.of(context).colorScheme.primary,
                           ),
                         ),
                       ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.icon(
+                      key: const ValueKey('edit'),
+                      onPressed: _loading ? null : () => _edit(loaded),
+                      icon: const Icon(Icons.content_cut),
+                      label: const Text('Edit'),
                     ),
                   ),
                 ],
@@ -272,33 +311,4 @@ class _Row extends StatelessWidget {
       ],
     ),
   );
-}
-
-/// Draws one mirrored bar per bucket, scaled so the loudest one fills the height.
-class _WaveformPainter extends CustomPainter {
-  _WaveformPainter(this.waveform, this.color);
-
-  final Waveform waveform;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (waveform.channels == 0 || waveform.buckets == 0) return;
-    final values = waveform.channel(0);
-    if (values.isEmpty) return;
-    final peak = values.reduce(math.max);
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = math.max(1, size.width / values.length)
-      ..strokeCap = StrokeCap.round;
-    final mid = size.height / 2;
-    for (var i = 0; i < values.length; i++) {
-      final x = (i + 0.5) * size.width / values.length;
-      final h = peak == 0 ? 0.0 : values[i] / peak * mid;
-      canvas.drawLine(Offset(x, mid - h), Offset(x, mid + math.max(h, 0.5)), paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_WaveformPainter old) => old.waveform != waveform || old.color != color;
 }
