@@ -26,10 +26,7 @@ class ShowcaseApp extends StatelessWidget {
     debugShowCheckedModeBanner: false,
     theme: ThemeData(colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal)),
     darkTheme: ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.teal,
-        brightness: Brightness.dark,
-      ),
+      colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal, brightness: Brightness.dark),
     ),
     home: const ShowcasePage(),
   );
@@ -84,10 +81,7 @@ class _ShowcasePageState extends State<ShowcasePage> {
       _error = null;
     });
     // One bucket per logical pixel of the waveform.
-    final width = math.min(
-      MediaQuery.sizeOf(context).width - 32,
-      _maxContentWidth,
-    );
+    final width = math.min(MediaQuery.sizeOf(context).width - 32, _maxContentWidth);
     Frustbite? audio;
     try {
       final source = await read();
@@ -108,8 +102,7 @@ class _ShowcasePageState extends State<ShowcasePage> {
         setState(() => _error = e is FrustbiteException ? e.message : '$e');
       }
     } finally {
-      if (generation == _generation && mounted)
-        setState(() => _loading = false);
+      if (generation == _generation && mounted) setState(() => _loading = false);
     }
   }
 
@@ -146,9 +139,7 @@ class _ShowcasePageState extends State<ShowcasePage> {
                 if (_error != null)
                   Text(
                     _error!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+                    style: TextStyle(color: Theme.of(context).colorScheme.error),
                   ),
                 if (loaded != null) ...[
                   _InfoCard(loaded.name, loaded.audio.info),
@@ -206,10 +197,7 @@ class _InfoCard extends StatelessWidget {
             _Row('Sample rate', '${info.sampleRate} Hz'),
             _Row('Channels', '${info.channels}'),
             _Row('Duration', _formatDuration(info.duration)),
-            _Row(
-              'Bitrate',
-              bitrate == null ? 'unknown' : '${(bitrate / 1000).round()} kbps',
-            ),
+            _Row('Bitrate', bitrate == null ? 'unknown' : '${(bitrate / 1000).round()} kbps'),
           ],
         ),
       ),
@@ -258,9 +246,7 @@ class _TagsCard extends StatelessWidget {
               child: entries.isEmpty
                   ? const Text('No tags')
                   : Column(
-                      children: [
-                        for (final e in entries.entries) _Row(e.key, e.value!),
-                      ],
+                      children: [for (final e in entries.entries) _Row(e.key, e.value!)],
                     ),
             ),
           ],
@@ -309,15 +295,10 @@ class _WaveformPainter extends CustomPainter {
     for (var i = 0; i < values.length; i++) {
       final x = (i + 0.5) * size.width / values.length;
       final h = peak == 0 ? 0.0 : values[i] / peak * mid;
-      canvas.drawLine(
-        Offset(x, mid - h),
-        Offset(x, mid + math.max(h, 0.5)),
-        paint,
-      );
+      canvas.drawLine(Offset(x, mid - h), Offset(x, mid + math.max(h, 0.5)), paint);
     }
   }
 
   @override
-  bool shouldRepaint(_WaveformPainter old) =>
-      old.waveform != waveform || old.color != color;
+  bool shouldRepaint(_WaveformPainter old) => old.waveform != waveform || old.color != color;
 }
