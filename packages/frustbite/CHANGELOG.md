@@ -9,6 +9,9 @@ Documentation. The library and its native libraries are unchanged from 0.0.4.
 - New README section "Output formats: WAV, FLAC, Opus, MP3 and AAC": what each
   format is, sizes and compatibility, converting MP3 to WAV, why WAV came
   first, and why there is no MP3 or AAC output yet.
+- The README's "Acknowledgements" section is gone. The MIT license texts of
+  the projects that parts of the build hook and build scripts are adapted
+  from are now in `THIRD_PARTY_LICENSES.md` ("Adapted code").
 
 ## 0.0.4
 

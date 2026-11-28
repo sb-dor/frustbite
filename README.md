@@ -107,9 +107,3 @@ See [AGENTS.md](AGENTS.md) for the repository layout and development commands.
 See [LICENSE](LICENSE). Third-party notices are in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md); note that the bundled
 `symphonia` decoders are MPL-2.0, and that file says where to get their source.
-
-## Acknowledgements
-
-Repository structure, build hooks and release flow adapted from
-[hawkkiller/pixer](https://github.com/hawkkiller/pixer) (MIT, © 2026 Michael
-Lazebny).

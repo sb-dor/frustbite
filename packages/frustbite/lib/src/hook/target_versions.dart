@@ -1,11 +1,10 @@
-// Adapted from hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
-// https://github.com/hawkkiller/pixer
+// Contains MIT-licensed third-party code; see THIRD_PARTY_LICENSES.md.
 
-/// The target Android NDK API level for compilation (same as pixer).
+/// The target Android NDK API level for compilation.
 const androidTargetNdkApi = 30;
 
-/// The minimum macOS version prebuilt binaries target (same as pixer).
+/// The minimum macOS version prebuilt binaries target.
 const macOSTargetVersion = 13;
 
-/// The minimum iOS version prebuilt binaries target (same as pixer).
+/// The minimum iOS version prebuilt binaries target.
 const iOSTargetVersion = 16;

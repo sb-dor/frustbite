@@ -13,11 +13,10 @@
 //
 //   dart tool/check_pubignore.dart <staged dir>
 //
-// The check is modelled on PlugFox/ws (MIT, https://github.com/PlugFox/ws,
-// tool/check_pubignore.dart), which compares `.gitignore` and `.pubignore`;
-// frustbite asserts the published outcome instead. The pattern matching is
-// the gitignore subset a `.pubignore` uses here: comments, `!`, a leading `/`,
-// a trailing `/`, `*`, `**` and `?`.
+// The check asserts the published outcome rather than comparing `.gitignore`
+// and `.pubignore`. The pattern matching is the gitignore subset a
+// `.pubignore` uses here: comments, `!`, a leading `/`, a trailing `/`, `*`,
+// `**` and `?`.
 import 'dart:io';
 
 import 'package:path/path.dart' as p;

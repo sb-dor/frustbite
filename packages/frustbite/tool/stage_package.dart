@@ -35,10 +35,6 @@
 //     by hand, not by the build) or the research notes;
 //   - the libraries as `prebuilt/<os>-<arch>[-sim]/<one file name>`, and
 //     `prebuilt/checksums.json` (sorted keys, `<dir>/<file>` to sha256).
-//
-// The layout and the checksums follow PlugFox/ws (MIT,
-// https://github.com/PlugFox/ws, tool/stage_native.sh); the code is written
-// for frustbite.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';

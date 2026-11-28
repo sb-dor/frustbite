@@ -1,9 +1,6 @@
 // The pure decisions of the build hook: which source to use, where the
 // bundled library lives, whether it is intact, where the crate is. Kept free
 // of the hook runner so they can be tested directly.
-//
-// The resolution design follows PlugFox/ws (MIT, https://github.com/PlugFox/ws,
-// `native/hook/build.dart`); the code is written for frustbite.
 
 import 'dart:convert';
 import 'dart:io';
