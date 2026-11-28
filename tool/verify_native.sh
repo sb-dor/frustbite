@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Checks a built frustbite native library before it is shipped.
-# Adapted from PlugFox/ws (MIT), tool/verify_native.sh.
+# Contains MIT-licensed third-party code; see THIRD_PARTY_LICENSES.md.
 #
 # Usage: tool/verify_native.sh <file> <target>
 #   <file>    the built libfrustbite.so / libfrustbite.dylib / frustbite.dll

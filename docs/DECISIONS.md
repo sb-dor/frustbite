@@ -2,10 +2,8 @@
 
 The rulings that shaped frustbite, with their status. Stage 1 rulings (R1 to
 R27) were made while building the reading stage; the distribution rulings (D-A
-to D-L, plus two deviations) came with distribution v2 (version 0.0.2). The
-design of distribution v2 follows [PlugFox/ws](https://github.com/PlugFox/ws)
-(MIT); the code is written for frustbite. The editing rulings (E-A to E-H)
-came with stage 2.
+to D-L, plus two deviations) came with distribution v2 (version 0.0.2). The editing
+rulings (E-A to E-H) came with stage 2.
 
 Status: **adopted** (in force), **superseded** (replaced by a later entry),
 **lifted** (the restriction no longer applies).

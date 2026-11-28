@@ -1,4 +1,4 @@
-// Adapted from PlugFox/ws (MIT), native/rust/build.rs.
+// Contains MIT-licensed third-party code; see THIRD_PARTY_LICENSES.md.
 //
 // Linker flags for the cdylib. They are set here and not through
 // CARGO_TARGET_<TRIPLE>_RUSTFLAGS or `.cargo/config.toml`: a user's RUSTFLAGS or

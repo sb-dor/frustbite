@@ -1,5 +1,4 @@
-// Adapted from hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
-// https://github.com/hawkkiller/pixer
+// Contains MIT-licensed third-party code; see THIRD_PARTY_LICENSES.md.
 
 import 'dart:io';
 
@@ -10,8 +9,7 @@ import 'package:frustbite/src/hook/target_versions.dart';
 /// `ANDROID_NDK_ROOT` or `ANDROID_NDK_HOME`.
 ///
 /// Used when building the Android release binaries from source. The compiler
-/// targets [androidTargetNdkApi] (pixer's compiler uses 35 while its code
-/// config says 30; frustbite uses one value for both).
+/// targets [androidTargetNdkApi], the same API level as the code config.
 CCompilerConfig getAndroidCompilerConfig(Architecture architecture) {
   final ndkPath =
       Platform.environment['ANDROID_NDK_ROOT'] ??

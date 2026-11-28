@@ -4,12 +4,9 @@
 // `RustBuilder`: that runs cargo without the crate as working directory, so
 // the crate's `.cargo/config.toml` (`+crt-static` on Windows MSVC) would not
 // apply, and it has no `--locked`, fixed NDK linker setup or per-API target
-// directories. The environment setup (NDK clang from `code.cCompiler`, the
-// target directory keyed by NDK API / deployment version) follows PlugFox/ws
-// (MIT, https://github.com/PlugFox/ws, `native/hook/build.dart`); the code is
-// written for frustbite. The Apple deployment-target helper is adapted from
-// hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
-// https://github.com/hawkkiller/pixer
+// directories.
+//
+// Contains MIT-licensed third-party code; see THIRD_PARTY_LICENSES.md.
 
 import 'dart:async';
 import 'dart:io';

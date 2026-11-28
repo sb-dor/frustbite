@@ -2,7 +2,7 @@
 # replace the rustflags below, but never build.rs output.
 
 # Windows: link the C runtime statically, so the DLL loads without the VC++
-# redistributable (clean servers, Nano Server). Adapted from PlugFox/ws (MIT).
+# redistributable (clean servers, Nano Server). Contains MIT-licensed third-party code; see THIRD_PARTY_LICENSES.md.
 # This stays here because build.rs cannot set `-C target-feature`.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]

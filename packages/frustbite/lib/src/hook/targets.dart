@@ -1,5 +1,4 @@
-// Adapted from hawkkiller/pixer (MIT, Copyright (c) 2026 Michael Lazebny):
-// https://github.com/hawkkiller/pixer
+// Contains MIT-licensed third-party code; see THIRD_PARTY_LICENSES.md.
 
 import 'package:code_assets/code_assets.dart';
 
