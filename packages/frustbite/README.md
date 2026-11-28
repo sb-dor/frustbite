@@ -59,7 +59,7 @@ has no dependency on it.
 
 ```yaml
 dependencies:
-  frustbite: ^0.0.3
+  frustbite: ^0.0.4
 ```
 
 The package carries the prebuilt native library for every native target (12
@@ -233,7 +233,7 @@ of each operation.
 ## Web
 
 Download `frustbite.wasm` from the GitHub Release `frustbite-v<version>`
-matching the package version (for example `frustbite-v0.0.3`) and put it in the
+matching the package version (for example `frustbite-v0.0.4`) and put it in the
 web root, then initialize before first use:
 
 ```dart

@@ -1,3 +1,19 @@
+## 0.0.4
+
+Documentation and pub.dev listing. The library and its native libraries are
+unchanged from 0.0.3.
+
+- The README has a new section, "What frustbite does not do". frustbite does
+  not play or record audio, encode compressed formats yet, or open URLs. For
+  playback, hand `toWav()` bytes to a player package such as `audioplayers`,
+  `just_audio` or `media_kit`; there is a short example. Converting first also
+  plays Opus and Vorbis on iOS.
+- pub.dev metadata: a new description, homepage (the docs site), issue
+  tracker, topics and a showcase screenshot.
+- The showcase app (not published) has an editor: trim with handles, fades,
+  mono, resample, normalize and trim silence, playback before and after, and
+  Save as WAV.
+
 ## 0.0.3
 
 Editing (stage 2). The first release on pub.dev.
