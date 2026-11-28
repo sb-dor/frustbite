@@ -1,3 +1,15 @@
+## 0.0.5
+
+Documentation. The library and its native libraries are unchanged from 0.0.4.
+
+- New README section "Why frustbite": the problem it solves, what it offers
+  instead of FFmpeg or one plugin per task, and a table of real uses (voice
+  messages, podcast and music apps, 16 kHz mono WAV for speech recognition,
+  trimming before upload, editors, Opus and Vorbis on iOS, Dart backends).
+- New README section "Output formats: WAV, FLAC, Opus, MP3 and AAC": what each
+  format is, sizes and compatibility, converting MP3 to WAV, why WAV came
+  first, and why there is no MP3 or AAC output yet.
+
 ## 0.0.4
 
 Documentation and pub.dev listing. The library and its native libraries are
