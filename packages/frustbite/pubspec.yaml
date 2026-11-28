@@ -1,6 +1,6 @@
 name: frustbite
 description: "Read and edit audio in Dart and Flutter: decode MP3, AAC, FLAC, Opus and more, read tags and cover art, draw waveforms, trim, mix and save as WAV."
-version: 0.0.3
+version: 0.0.4
 repository: https://github.com/sb-dor/frustbite
 homepage: https://sb-dor.github.io/frustbite/
 issue_tracker: https://github.com/sb-dor/frustbite/issues
