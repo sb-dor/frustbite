@@ -24,11 +24,6 @@ and WebAssembly.**
 - Android, iOS, macOS, Linux, Windows and the web (dart2js and dart2wasm)
 - Pure Rust core with no FFmpeg and no C codecs
 
-frustbite does not play or record audio, and it writes WAV only for now. For
-playback, hand the bytes from `toWav()` to a player package such as
-`audioplayers`, `just_audio` or `media_kit`. See
-[What frustbite does not do](packages/frustbite/README.md#what-frustbite-does-not-do).
-
 Read the [documentation](https://sb-dor.github.io/frustbite/) or see the
 [package README](packages/frustbite/README.md) for API usage and the
 [roadmap](packages/frustbite/README.md#roadmap).
@@ -36,6 +31,39 @@ Read the [documentation](https://sb-dor.github.io/frustbite/) or see the
 Try it in the minimal [Flutter showcase](packages/showcase/README.md), and see
 how it compares with other Dart audio packages in the
 [benchmarks](packages/benchmark/README.md).
+
+## Why frustbite
+
+Playing audio in Flutter is easy; reading its tags, drawing its waveform,
+cutting it or converting it is not. The usual answer has been FFmpeg, whose
+common Flutter wrapper, FFmpegKit, was retired in 2025. FFmpeg adds tens of
+megabytes, does not run on the web and is LGPL or GPL. frustbite does these
+jobs with one Dart API on every platform and the web, a native library of about
+2 to 4 MB, an MIT license and no dependencies on other Dart packages. People
+use it for:
+
+- waveforms and durations of voice messages;
+- tags, cover art and seek-bar waveforms in podcast and music apps;
+- the 16 kHz mono WAV that speech recognition models such as Whisper expect;
+- trimming, fades and normalization before an upload, or ringtones;
+- audio editors: joins with crossfades, mixing, silence removal;
+- playing Opus or Vorbis on iOS, by converting to WAV first;
+- the same processing in a Dart backend.
+
+More in [Why frustbite](packages/frustbite/README.md#why-frustbite).
+
+## What it does not do
+
+frustbite does not play or record audio, and it writes WAV only for now. For
+playback, hand the bytes from `toWav()` to a player package such as
+`audioplayers`, `just_audio` or `media_kit`. See
+[What frustbite does not do](packages/frustbite/README.md#what-frustbite-does-not-do).
+
+WAV is sound with no compression: about 10 MB a minute, but it loses nothing
+and plays on almost every device. FLAC (lossless, about half the size) and Opus
+(lossy, the smallest) come next. MP3 and AAC output wait for a pure-Rust encoder
+with a fitting license. What each format is and why, in
+[Output formats](packages/frustbite/README.md#output-formats-wav-flac-opus-mp3-and-aac).
 
 ## Showcase
 

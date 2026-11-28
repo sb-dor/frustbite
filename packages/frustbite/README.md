@@ -14,6 +14,36 @@ through WebAssembly on the web.
 
 Full documentation: <https://sb-dor.github.io/frustbite/>.
 
+## Why frustbite
+
+Playing audio in Flutter is easy, but doing anything else with it is not:
+reading its length and tags, drawing its waveform, cutting it or converting it.
+The usual answer has been FFmpeg, and FFmpegKit, the common FFmpeg wrapper for
+Flutter, was retired in 2025 (community forks carry on). FFmpeg adds tens of
+megabytes to an app, does not run on the web, and is licensed under the LGPL or
+GPL. The other option is a separate plugin for each task, often for Android
+and iOS only.
+
+frustbite does these jobs in one package:
+
+- one Dart API on Android, iOS, macOS, Windows, Linux and the web;
+- a native library of about 2 to 4 MB per platform;
+- MIT license, and no dependencies on other Dart packages;
+- plain Dart, so it also runs on a server or in a command line tool, not only
+  in Flutter.
+
+What people use it for:
+
+| Task | What frustbite gives you |
+| --- | --- |
+| Voice messages in a chat app | the waveform bars and the duration |
+| A podcast or music app | tags, cover art and duration without playing the file; a waveform for the seek bar |
+| Speech recognition (Whisper and similar) | the 16 kHz mono WAV these models expect: `edit().toMono().resample(16000).toWav()` |
+| Trimming before upload (social apps, ringtones) | trim, fades and normalization on the device |
+| An audio editor | joins with crossfades, mixing, silence removal |
+| Opus or Vorbis on iOS | convert to WAV and hand it to any player; iOS does not play them from Ogg or WebM |
+| Processing on a server | the same code in a Dart backend |
+
 ## What frustbite does not do
 
 frustbite reads and edits audio. It does not:
@@ -27,7 +57,8 @@ frustbite reads and edits audio. It does not:
 - **Record.** It has no microphone input. Record with another package, then
   open the file or bytes with frustbite.
 - **Encode compressed formats yet.** Output is WAV. FLAC and Opus encoders and
-  tag writing are on the [roadmap](#roadmap).
+  tag writing are on the [roadmap](#roadmap); for why there is no MP3 or AAC
+  output, see [Output formats](#output-formats-wav-flac-opus-mp3-and-aac).
 - **Open URLs.** It takes a file path or bytes, so download the file first.
 
 Playing an edit with `audioplayers`:
@@ -45,6 +76,70 @@ Future<void> preview(Frustbite song, AudioPlayer player) async {
   await player.play(BytesSource(wav, mimeType: 'audio/wav'));
 }
 ```
+
+## Output formats: WAV, FLAC, Opus, MP3 and AAC
+
+frustbite reads all of these formats (see [Formats](#formats)). This section is
+about **saving**, which today means WAV.
+
+| Format | Compression | One minute of stereo | Quality | Plays everywhere? |
+| --- | --- | --- | --- | --- |
+| **WAV** | none | about 10 MB | the original | yes |
+| **FLAC** | lossless | about 5 to 6 MB | the original | almost everywhere |
+| **MP3** | lossy | about 1 MB at 128 kbps | good | yes |
+| **AAC** | lossy | about 1 MB | better than MP3 | yes |
+| **Opus** | lossy | about 0.5 to 1 MB | the best per kilobyte | not well on Apple platforms |
+
+- **WAV** is sound with no compression: a 44-byte header that says, for
+  example, "stereo, 44100 Hz, 16-bit", then the samples one after another.
+  Almost every device, browser and player plays a 16-bit WAV. That is what
+  `toWav()` and `saveWav()` write by default (`WavFormat.pcm16`); the 24-bit
+  and float formats are for studio work, and some simple players cannot play
+  them.
+- **FLAC** is "WAV in a zip file": lossless, about half the size, and it
+  unpacks to exactly the same samples. It is used for high-quality music and
+  archives.
+- **Opus** is a modern lossy format designed for the internet, used for voice
+  messages in WhatsApp and Telegram, calls in Discord and WebRTC, and audio on
+  YouTube. Speech stays clear at 16 to 24 kbps. Apple platforms play it only
+  in some containers.
+
+Converting an MP3 to WAV is one line, `Frustbite.fromFile('song.mp3').saveWav('song.wav')`,
+and works the same for every format frustbite reads. It does not bring back
+what the MP3 lost; it keeps the sound exactly as it is, in a file about ten
+times bigger. So WAV is best as a step in between: to hand to a player, to feed
+to a speech model, or to keep the result of an edit without losing more.
+
+### Why WAV first
+
+WAV needs no encoder. frustbite writes it by hand in about 130 lines of Rust,
+with no dependency. It loses nothing, so an edit can be saved and edited again
+any number of times without getting worse. And `render()` gives back a normal
+`Frustbite` held as a float WAV in memory, so every method works on the result.
+
+### Why no MP3 or AAC output
+
+Reading a format needs a decoder; saving it needs an encoder, and a good one
+is a big piece of work: it models what the ear cannot hear and throws that
+away. LAME, the standard MP3 encoder, took more than 20 years to mature. The
+existing encoders do not fit frustbite's rules: the core is pure Rust, so it
+builds for 12 native targets and for WebAssembly, and its dependencies are
+MIT, Apache-2.0, BSD, Zlib or MPL-2.0, so any app can use it without licensing
+trouble.
+
+- **MP3.** The patents expired in 2017, so the format is free to use. The
+  encoders are the problem: LAME is C under the LGPL, and the Rust MP3
+  encoders are either LGPL too (`shine-rs`) or too new to judge.
+- **AAC.** There is no mature pure-Rust AAC encoder; the good ones are C
+  (`fdk-aac` under its own non-free license, `libxaac`). AAC is also still
+  licensed through a patent pool.
+
+The plan is FLAC and Opus first, since pure-Rust encoders with fitting licenses
+exist for both. MP3 can follow once a good pure-Rust encoder does. AAC is
+further off, most likely through the encoders the operating systems ship
+(Apple, Android and Windows have one; Linux does not). Until then, an app can
+take the WAV from frustbite and compress it with a platform encoder or another
+package.
 
 ## Showcase
 
