@@ -12,15 +12,48 @@ decoded PCM; trim, join, mix, fade, normalize, resample and save as WAV. A Rust
 crate does the work through FFI and Dart build hooks on native platforms and
 through WebAssembly on the web.
 
-Compressed encoders and tag writing are on the [roadmap](#roadmap).
-
 Full documentation: <https://sb-dor.github.io/frustbite/>.
+
+## What frustbite does not do
+
+frustbite reads and edits audio. It does not:
+
+- **Play audio.** It has no player and no audio output. Use a player package
+  such as [`audioplayers`](https://pub.dev/packages/audioplayers),
+  [`just_audio`](https://pub.dev/packages/just_audio) or
+  [`media_kit`](https://pub.dev/packages/media_kit) and hand it the WAV bytes
+  from `toWav()`. Converting first also lets a player play formats its
+  platform cannot decode, such as Opus or Vorbis on iOS.
+- **Record.** It has no microphone input. Record with another package, then
+  open the file or bytes with frustbite.
+- **Encode compressed formats yet.** Output is WAV. FLAC and Opus encoders and
+  tag writing are on the [roadmap](#roadmap).
+- **Open URLs.** It takes a file path or bytes, so download the file first.
+
+Playing an edit with `audioplayers`:
+
+```dart
+import 'package:audioplayers/audioplayers.dart';
+import 'package:frustbite/frustbite.dart';
+
+Future<void> preview(Frustbite song, AudioPlayer player) async {
+  final wav = await song
+      .edit()
+      .trim(end: const Duration(seconds: 30))
+      .fadeOut(const Duration(seconds: 2))
+      .toWavAsync();
+  await player.play(BytesSource(wav, mimeType: 'audio/wav'));
+}
+```
 
 ## Showcase
 
 The [Flutter showcase](https://github.com/sb-dor/frustbite/tree/main/packages/showcase),
 pictured at the top, opens an audio file or a bundled sample and shows its
-stream info, tags, cover art and waveform.
+stream info, tags, cover art and waveform. Its editor trims, fades, normalizes,
+resamples and converts to mono, plays the source and the result, and saves the
+result as WAV. The showcase plays audio with `audioplayers`; frustbite itself
+has no dependency on it.
 
 ## Install
 

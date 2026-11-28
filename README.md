@@ -24,6 +24,11 @@ and WebAssembly.**
 - Android, iOS, macOS, Linux, Windows and the web (dart2js and dart2wasm)
 - Pure Rust core with no FFmpeg and no C codecs
 
+frustbite does not play or record audio, and it writes WAV only for now. For
+playback, hand the bytes from `toWav()` to a player package such as
+`audioplayers`, `just_audio` or `media_kit`. See
+[What frustbite does not do](packages/frustbite/README.md#what-frustbite-does-not-do).
+
 Read the [documentation](https://sb-dor.github.io/frustbite/) or see the
 [package README](packages/frustbite/README.md) for API usage and the
 [roadmap](packages/frustbite/README.md#roadmap).
@@ -36,7 +41,9 @@ how it compares with other Dart audio packages in the
 
 The [Flutter showcase](packages/showcase/README.md), pictured at the top, opens
 an audio file or a bundled sample and shows its stream info, tags, cover art and
-waveform. It runs on every platform frustbite supports.
+waveform. Its editor trims, fades, normalizes, resamples and converts to mono,
+plays the source and the result, and saves the result as WAV. Playback in the
+showcase uses `audioplayers`; the frustbite package does not depend on it.
 
 ## Benchmarks
 

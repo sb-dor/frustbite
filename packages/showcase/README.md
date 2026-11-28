@@ -1,7 +1,15 @@
 # Frustbite showcase
 
-Minimal Flutter app for frustbite: open an audio file (or one of the bundled
-samples) and see its codec info, tags, cover art and a waveform.
+Flutter app for frustbite: open an audio file (or one of the bundled samples)
+and see its codec info, tags, cover art and a waveform. **Edit** opens the
+editor: drag the handles on the waveform to trim, add fades, trim silence,
+convert to mono, resample or normalize, then **Apply** to see the result. Play
+the source and the result, and save the result as a 16-bit, 24-bit or float
+WAV.
+
+frustbite does not play audio, so the app plays the WAV bytes from `toWav()`
+with [`audioplayers`](https://pub.dev/packages/audioplayers). That dependency
+belongs to the showcase only.
 
 The package depends on `../frustbite` and builds the Rust library locally
 (`hooks.user_defines.frustbite.local_build: true`), so a Rust toolchain is required.
@@ -25,8 +33,8 @@ The app calls `Frustbite.initialize()` at start-up, which loads `frustbite.wasm`
 
 ## macOS
 
-The sandbox entitlements include `com.apple.security.files.user-selected.read-only`
-so that "Open file" can read the picked file.
+The sandbox entitlements include `com.apple.security.files.user-selected.read-write`
+so that "Open file" can read the picked file and "Save WAV" can write the result.
 
 ## Samples
 

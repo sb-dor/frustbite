@@ -44,6 +44,11 @@ CONTRIBUTING.
 
 ## Open items
 
+- **A player package.** frustbite does not play audio; apps hand `toWav()`
+  bytes to a player package, and the showcase uses `audioplayers`. A separate
+  package on the same Rust core (for example `frustbite_player`) would let
+  apps play without a third-party player. The `frustbite` package itself stays
+  free of dependencies.
 - **Android minimum below API 30.** The NDK pin and the 16 KB alignment set
   API 30 today (R27). Lowering it needs a CI verification that the libraries
   load on an older emulator image.
